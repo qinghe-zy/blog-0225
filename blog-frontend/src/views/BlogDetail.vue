@@ -77,13 +77,28 @@
     <el-dialog v-model="editDialogVisible" title="修改博客" width="50%">
       <el-form :model="editForm" label-width="80px">
         <el-form-item label="标题"><el-input v-model="editForm.title"></el-input></el-form-item>
-        <el-form-item label="分类">
-          <el-select v-model="editForm.category">
-            <el-option label="技术" value="技术"></el-option>
-            <el-option label="生活" value="生活"></el-option>
-            <el-option label="感悟" value="感悟"></el-option>
+        
+        <el-form-item label="分类/标签">
+          <el-select
+            v-model="editForm.tagsArray"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            placeholder="第一个标签将作为主分类"
+            style="width: 100%"
+          >
+            <el-option value="Java" label="Java" />
+            <el-option value="Vue" label="Vue" />
+            <el-option value="Spring" label="Spring" />
+            <el-option value="Python" label="Python" />
+            <el-option value="MySQL" label="MySQL" />
+            <el-option value="算法" label="算法" />
+            <el-option value="面试" label="面试" />
+            <el-option value="生活" label="生活" />
           </el-select>
         </el-form-item>
+
         <el-form-item label="正文"><el-input type="textarea" :rows="10" v-model="editForm.content"></el-input></el-form-item>
       </el-form>
       <template #footer>
@@ -98,13 +113,11 @@
 </template>
 
 <script setup>
-// ✨ 1. 引入 onBeforeUnmount
 import { ref, reactive, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
 import MarkdownIt from 'markdown-it'
-// 引入图标
 import { Star, StarFilled, CollectionTag, Timer, CircleClose } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -115,7 +128,6 @@ const newComment = ref('')
 const userStore = localStorage.getItem('user')
 const currentUser = userStore ? JSON.parse(userStore) : null
 
-// ✨ 2. 记录进入页面的时间
 let enterTime = Date.now()
 
 // 状态管理
@@ -126,43 +138,32 @@ const status = reactive({
   isBlocked: false
 })
 
-// 计算属性：是否是作者本人
 const isAuthor = computed(() => {
   if (!currentUser || !blog.value.author) return false
   return currentUser.username === blog.value.author || currentUser.nickname === blog.value.author
 })
 
-// ✨ 3. 核心：页面销毁/跳转时上报阅读时长
+// ✨ 修改点4：使用 navigator.sendBeacon 上报时长
 onBeforeUnmount(() => {
-  // 如果没登录，或者博客还没加载出来，就不记录
   if (!currentUser || !blog.value.id) return
 
   const leaveTime = Date.now()
-  // 计算停留时长 (秒)
   const duration = Math.floor((leaveTime - enterTime) / 1000)
 
-  // 只有阅读超过 2 秒才视为有效阅读，避免误点
   if (duration > 2) {
-    // 使用 FormData 发送数据，对应后端的 @RequestParam
     const formData = new FormData()
     formData.append('userId', currentUser.id)
     formData.append('blogId', blog.value.id)
     formData.append('seconds', duration)
 
-    // 发送请求 (异步发送，不阻塞页面关闭)
-    axios.post('http://localhost:8080/api/blog/duration', formData)
-      .then(() => console.log(`已上报阅读时长: ${duration}秒`))
-      .catch(err => console.error('时长上报失败', err))
+    // sendBeacon 不会因为页面关闭而中断
+    navigator.sendBeacon('http://localhost:8080/api/blog/duration', formData)
   }
 })
 
-// 统一的加载入口
 onMounted(async () => {
-  // 先加载详情
   await loadDetail()
-  // 再加载评论
   loadComments()
-  // 最后检查状态
   if (currentUser) {
     checkAllStatus(route.params.id)
   }
@@ -185,11 +186,9 @@ const loadDetail = async () => {
 const checkAllStatus = async (blogId) => {
   const userId = currentUser.id
   
-  // 点赞
   const likeRes = await axios.get('http://localhost:8080/api/blog/checkLike', { params: { blogId, userId } })
   isLiked.value = likeRes.data
 
-  // 收藏/待读/拉黑
   const s1 = await axios.get('http://localhost:8080/api/action/check', { params: { blogId, userId, type: 1 } })
   status.isCollected = s1.data
   
@@ -216,7 +215,6 @@ const handleLike = async () => {
   }
 }
 
-// 通用动作逻辑 (收藏、待读、拉黑)
 const toggleAction = async (type) => {
   if (!currentUser) return ElMessage.warning('请先登录')
   
@@ -241,7 +239,6 @@ const toggleAction = async (type) => {
   }
 }
 
-// 评论逻辑
 const loadComments = async () => {
   const res = await axios.get(`http://localhost:8080/api/comment/list/${route.params.id}`)
   comments.value = res.data
@@ -262,21 +259,42 @@ const submitComment = async () => {
   loadComments()
 }
 
-// 编辑逻辑
+// ✨ 修改点5：编辑逻辑适配标签数组
 const editDialogVisible = ref(false)
-const editForm = reactive({})
+const editForm = reactive({
+  title: '',
+  content: '',
+  tagsArray: [] // 新增字段
+})
 
 const handleEdit = () => {
   Object.assign(editForm, blog.value)
+  // 将 "tag1,tag2" 转为 ["tag1", "tag2"]
+  editForm.tagsArray = blog.value.tags ? blog.value.tags.split(',') : []
   editDialogVisible.value = true
 }
 
 const submitEdit = async () => {
-  const res = await axios.put('http://localhost:8080/api/blog/update', editForm)
+  // 数组转回字符串
+  const tagsString = editForm.tagsArray.join(',')
+  // 提取第一个标签为分类
+  const newCategory = editForm.tagsArray.length > 0 ? editForm.tagsArray[0] : '默认'
+
+  const updateData = {
+    id: editForm.id,
+    title: editForm.title,
+    content: editForm.content,
+    tags: tagsString,      
+    category: newCategory, 
+    url: blog.value.url,
+    summary: blog.value.summary
+  }
+
+  const res = await axios.put('http://localhost:8080/api/blog/update', updateData)
   if (res.data === '修改成功！') {
     ElMessage.success('修改成功')
     editDialogVisible.value = false
-    loadDetail()
+    loadDetail() 
   }
 }
 </script>

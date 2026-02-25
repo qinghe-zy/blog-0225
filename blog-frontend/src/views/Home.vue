@@ -129,16 +129,7 @@
               <el-input v-model="blogForm.title" placeholder="请输入标题"></el-input>
             </el-form-item>
             
-            <el-form-item label="分类">
-              <el-radio-group v-model="blogForm.category">
-                <el-radio label="技术">技术</el-radio>
-                <el-radio label="生活">生活</el-radio>
-                <el-radio label="面试">面试</el-radio>
-                <el-radio label="职场">职场</el-radio>
-              </el-radio-group>
-            </el-form-item>
-
-            <el-form-item label="标签">
+            <el-form-item label="分类/标签">
               <el-select
                 v-model="blogForm.tags"
                 multiple
@@ -146,7 +137,7 @@
                 allow-create
                 default-first-option
                 :reserve-keyword="false"
-                placeholder="可以直接输入新标签并回车"
+                placeholder="输入标签并回车（第一个标签将作为主分类）"
                 style="width: 100%"
               >
                 <el-option value="Java" label="Java" />
@@ -156,6 +147,7 @@
                 <el-option value="MySQL" label="MySQL" />
                 <el-option value="算法" label="算法" />
                 <el-option value="面试" label="面试" />
+                <el-option value="生活" label="生活" />
               </el-select>
             </el-form-item>
 
@@ -204,7 +196,7 @@ const blogList = ref([])
 
 const blogForm = reactive({ 
   title: '', 
-  category: '技术', 
+  // category: '技术', // 删除默认分类
   tags: [], 
   content: '', 
   author: currentUser.value.nickname || currentUser.value.username, 
@@ -248,10 +240,23 @@ const handleSearch = async () => {
   }
 }
 
+// ✨ 修改点2：提交逻辑，取第一个标签为分类
 const submitBlog = async () => {
   if (!blogForm.title || !blogForm.content) return ElMessage.warning('请填写标题和正文')
+  if (blogForm.tags.length === 0) return ElMessage.warning('请至少输入一个标签') // 新增校验
+
   isSubmitting.value = true
-  const submitData = { ...blogForm, tags: blogForm.tags.join(','), author: currentUser.value.nickname || currentUser.value.username }
+  
+  // 自动提取第一个标签作为分类
+  const derivedCategory = blogForm.tags[0]
+
+  const submitData = { 
+    ...blogForm, 
+    category: derivedCategory, // 填充分类
+    tags: blogForm.tags.join(','), 
+    author: currentUser.value.nickname || currentUser.value.username 
+  }
+
   try { 
     await axios.post('http://localhost:8080/api/blog/add', submitData)
     ElMessage.success('发布成功！')
@@ -297,5 +302,4 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* 去除所有复杂特效，只保留简单的颜色变化 */
 </style>
