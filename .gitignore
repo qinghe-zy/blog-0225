@@ -22,3 +22,19 @@
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 replay_pid*
+# --- Java / Spring Boot (后端) ---
+target/
+*.class
+*.iml
+.idea/
+.vscode/
+blog_system/uploads/    # 忽略本地上传的图片文件夹
+
+# --- Node.js / Vue (前端) ---
+node_modules/
+dist/
+.env.local
+.DS_Store
+
+# --- 系统文件 ---
+*.log
