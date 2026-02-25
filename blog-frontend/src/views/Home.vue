@@ -1,31 +1,31 @@
 <template>
   <div class="common-layout">
     <el-container>
-      <el-header style="background-color: #fff; border-bottom: 1px solid #ddd; position: sticky; top: 0; z-index: 1000; display: flex; align-items: center; justify-content: space-between; padding: 0 20px;">
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <h2 style="margin: 0; color: #333; font-size: 22px;">✨ 智能博客系统</h2>
+      <el-header class="header-bar">
+        <div class="header-left">
+          <h2 class="logo-text">✨ 个人博客系统</h2>
         </div>
-        <div style="display: flex; align-items: center; gap: 10px;">
+        <div class="header-right">
           <el-dropdown>
-            <div style="display: flex; align-items: center; cursor: pointer;">
-              <el-avatar style="background-color: #409eff; margin-right: 5px;">{{ (currentUser.nickname || currentUser.username || '匿').charAt(0) }}</el-avatar>
-              <span style="font-weight: bold;">{{ currentUser.nickname || currentUser.username }}</span>
+            <div class="user-info-cursor">
+              <el-avatar class="user-avatar">{{ (currentUser.nickname || currentUser.username || '匿').charAt(0) }}</el-avatar>
+              <span class="username-text">{{ currentUser.nickname || currentUser.username }}</span>
               <el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </div>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item @click="$router.push('/user')">🚀 个人中心</el-dropdown-item>
-                <el-dropdown-item divided @click="handleLogout" style="color: red;">🚪 退出登录</el-dropdown-item>
+                <el-dropdown-item divided @click="handleLogout" style="color: #F56C6C;">🚪 退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
         </div>
       </el-header>
 
-      <el-container style="width: 1200px; margin: 20px auto;">
+      <el-container class="main-container">
         <el-aside width="240px">
-          <el-card style="border: none; position: sticky; top: 80px;">
-            <el-menu :default-active="currentMenu" style="border: none;">
+          <el-card class="menu-card">
+            <el-menu :default-active="currentMenu" class="clean-menu">
               <el-menu-item index="1" @click="loadBlogs">
                 <el-icon><Document /></el-icon><span>全部文章</span>
               </el-menu-item>
@@ -39,14 +39,14 @@
 
             <el-divider></el-divider>
 
-            <div style="padding: 0 20px;">
-              <div style="font-size: 14px; color: #999; margin-bottom: 10px;">🏷️ 热门标签</div>
-              <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            <div class="tags-section">
+              <div class="tags-title">🏷️ 热门标签</div>
+              <div class="tags-cloud">
                 <el-tag 
                   v-for="tag in ['Java', 'Vue', 'Spring', '算法', 'MySQL', '架构', 'AI']" 
                   :key="tag" 
                   size="small" 
-                  style="cursor: pointer;"
+                  class="tag-item"
                   @click="searchKeyword=tag; handleSearch()"
                 >
                   {{ tag }}
@@ -56,35 +56,37 @@
           </el-card>
         </el-aside>
 
-        <el-main style="padding: 0 20px; overflow: visible;">
-          <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
-            <h3 style="margin: 0;">{{ listTitle }}</h3>
-            <div style="display: flex; gap: 10px;">
-              <el-button type="primary" @click="dialogVisible = true">➕ 发布博客</el-button>
-              <el-input v-model="searchKeyword" placeholder="搜标题、标签..." style="width: 200px;" clearable @clear="handleSearch"></el-input>
-              <el-button type="success" @click="handleSearch">🔍</el-button>
+        <el-main class="content-main">
+          <div class="toolbar">
+            <h3 class="page-title">{{ listTitle }}</h3>
+            <div class="tools">
+              <el-button type="primary" @click="dialogVisible = true">➕ 发布文章</el-button>
+              <el-input 
+                v-model="searchKeyword" 
+                placeholder="搜索标题、标签..." 
+                style="width: 200px;" 
+                clearable 
+                @clear="handleSearch"
+                @keyup.enter="handleSearch"
+              ></el-input>
+              <el-button type="success" @click="handleSearch">🔍 搜索</el-button>
             </div>
           </div>
 
           <el-row :gutter="20">
             <el-col :span="8" v-for="blog in blogList" :key="blog.id">
-              <el-card :body-style="{ padding: '0px' }" style="margin-bottom: 20px; height: 380px; display: flex; flex-direction: column;" shadow="hover">
+              <el-card :body-style="{ padding: '0px' }" class="blog-card" shadow="hover">
                 
                 <img 
                   :src="blog.url || 'https://picsum.photos/400/200?random=' + blog.id" 
-                  style="height: 160px; width: 100%; object-fit: cover; cursor: pointer;"
+                  class="blog-cover"
                   @click="toDetail(blog.id)"
                 />
                 
-                <div style="padding: 14px; flex: 1; display: flex; flex-direction: column;">
-                  <span 
-                    style="font-weight: bold; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; margin-bottom: 8px;"
-                    @click="toDetail(blog.id)"
-                  >
-                    {{ blog.title }}
-                  </span>
+                <div class="blog-info">
+                  <span class="blog-title" @click="toDetail(blog.id)">{{ blog.title }}</span>
                   
-                  <div style="margin-bottom: 8px; height: 24px; overflow: hidden;">
+                  <div class="blog-tags">
                     <el-tag 
                       v-for="tag in (blog.tags ? blog.tags.split(',') : [])" 
                       :key="tag" 
@@ -97,42 +99,39 @@
                     </el-tag>
                   </div>
 
-                  <div 
-                    style="font-size: 13px; color: #888; height: 40px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; cursor: pointer;"
-                    @click="toDetail(blog.id)"
-                  >
+                  <div class="blog-summary" @click="toDetail(blog.id)">
                     {{ blog.summary || '暂无摘要' }}
                   </div>
                   
-                  <div style="margin-top: auto; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #999;">
-                    <span>🔥 {{ blog.views || 0 }} 阅读</span>
+                  <div class="blog-footer">
+                    <div class="footer-stats">
+                      <span>🔥 {{ blog.views || 0 }}</span>
+                      <span v-if="blog.score > 0" style="color: #E6A23C; margin-left: 10px;">
+                        ⭐ {{ blog.score }}
+                      </span>
+                    </div>
                     <div>
                       <el-button type="primary" link @click="toDetail(blog.id)">详情</el-button>
-                      
-                      <el-button 
-                        v-if="canDelete(blog)" 
-                        type="danger" 
-                        link 
-                        @click="handleDelete(blog.id)"
-                      >删除</el-button>
+                      <el-button v-if="canDelete(blog)" type="danger" link @click="handleDelete(blog.id)">删除</el-button>
                     </div>
                   </div>
                 </div>
               </el-card>
             </el-col>
           </el-row>
-          <el-empty v-if="blogList.length === 0" description="这里空空如也，快去发布第一篇文章吧！"></el-empty>
+
+          <el-empty v-if="blogList.length === 0" description="暂无相关文章，去发布一篇吧！"></el-empty>
         </el-main>
       </el-container>
     </el-container>
 
     <el-dialog v-model="dialogVisible" title="发布新文章" width="50%">
         <el-form :model="blogForm" label-width="80px">
-            <el-form-item label="标题">
+            <el-form-item label="文章标题">
               <el-input v-model="blogForm.title" placeholder="请输入标题"></el-input>
             </el-form-item>
             
-            <el-form-item label="分类/标签">
+            <el-form-item label="分类标签">
               <el-select
                 v-model="blogForm.tags"
                 multiple
@@ -140,7 +139,7 @@
                 allow-create
                 default-first-option
                 :reserve-keyword="false"
-                placeholder="输入标签并回车（第一个标签将作为主分类）"
+                placeholder="输入标签并回车（首个标签为主分类）"
                 style="width: 100%"
               >
                 <el-option value="Java" label="Java" />
@@ -154,25 +153,25 @@
               </el-select>
             </el-form-item>
 
-            <el-form-item label="封面">
+            <el-form-item label="封面图片">
               <el-upload 
                 action="http://localhost:8080/api/upload" 
                 :show-file-list="false" 
-                :on-success="(res)=>{blogForm.url=res;ElMessage.success('上传成功')}" 
-                style="border: 1px dashed #d9d9d9; width: 100px; height: 100px; display: flex; justify-content: center; align-items: center; cursor: pointer;"
+                :on-success="(res)=>{blogForm.url=res;ElMessage.success('封面上传成功')}" 
+                class="avatar-uploader"
               >
-                <img v-if="blogForm.url" :src="blogForm.url" style="width: 100%; height: 100%; object-fit: cover; display: block;"/>
-                <el-icon v-else :size="28" color="#8c939d"><Plus/></el-icon>
+                <img v-if="blogForm.url" :src="blogForm.url" class="avatar"/>
+                <el-icon v-else class="avatar-uploader-icon"><Plus/></el-icon>
               </el-upload>
             </el-form-item>
             
-            <el-form-item label="正文">
+            <el-form-item label="文章正文">
               <el-input type="textarea" :rows="8" v-model="blogForm.content" placeholder="支持 Markdown 语法..."></el-input>
             </el-form-item>
         </el-form>
         <template #footer>
-          <el-button @click="dialogVisible=false">取消</el-button>
-          <el-button type="primary" @click="submitBlog" :loading="isSubmitting">发布</el-button>
+          <el-button @click="dialogVisible=false">取 消</el-button>
+          <el-button type="primary" @click="submitBlog" :loading="isSubmitting">发 布</el-button>
         </template>
     </el-dialog>
   </div>
@@ -183,7 +182,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
-import { Plus, ArrowDown, Document, Trophy, Search, Star } from '@element-plus/icons-vue' // 引入 Star 图标
+import { Plus, ArrowDown, Document, Trophy, Search, Star } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const listTitle = ref('全部文章')
@@ -199,7 +198,6 @@ const blogList = ref([])
 
 const blogForm = reactive({ 
   title: '', 
-  // category: '技术', // 删除默认分类
   tags: [], 
   content: '', 
   author: currentUser.value.nickname || currentUser.value.username, 
@@ -219,7 +217,7 @@ const loadBlogs = async () => {
     listTitle.value = '全部文章'
     currentMenu.value = '1'
   } catch (e) {
-    ElMessage.error('获取文章失败')
+    ElMessage.error('获取文章列表失败')
   }
 }
 
@@ -227,28 +225,26 @@ const loadHotBlogs = async () => {
   try {
     const res = await axios.get('http://localhost:8080/api/blog/hot')
     blogList.value = res.data
-    listTitle.value = '全站热门'
+    listTitle.value = '全站热门榜单'
     currentMenu.value = '2' 
   } catch (e) {
     ElMessage.error('获取热门失败')
   }
 }
 
-/**
- * ✨✨✨ 新增：加载个性化推荐 ✨✨✨
- */
+// ✨✨✨ 智能推荐入口 ✨✨✨
 const loadRecommend = async () => {
   if (!currentUser.value.id) {
-    ElMessage.warning('请先登录查看推荐')
+    ElMessage.warning('请登录后查看个性化推荐')
     return
   }
   try {
     const res = await axios.get(`http://localhost:8080/api/blog/recommend?userId=${currentUser.value.id}`)
     blogList.value = res.data
-    listTitle.value = '猜你喜欢 (基于您的兴趣)'
+    listTitle.value = '猜你喜欢 (基于您的阅读兴趣)'
     currentMenu.value = '3'
   } catch (e) {
-    ElMessage.error('获取推荐失败')
+    ElMessage.error('获取推荐数据失败')
   }
 }
 
@@ -257,25 +253,23 @@ const handleSearch = async () => {
   try {
     const res = await axios.get('http://localhost:8080/api/blog/search', { params: { keyword: searchKeyword.value } })
     blogList.value = res.data
-    listTitle.value = `搜索: ${searchKeyword.value}`
+    listTitle.value = `搜索结果: "${searchKeyword.value}"`
   } catch (e) {
     ElMessage.error('搜索失败')
   }
 }
 
-// 修改点2：提交逻辑，取第一个标签为分类
 const submitBlog = async () => {
-  if (!blogForm.title || !blogForm.content) return ElMessage.warning('请填写标题和正文')
-  if (blogForm.tags.length === 0) return ElMessage.warning('请至少输入一个标签') // 新增校验
+  if (!blogForm.title || !blogForm.content) return ElMessage.warning('标题和正文不能为空')
+  if (blogForm.tags.length === 0) return ElMessage.warning('请至少输入一个标签') 
 
   isSubmitting.value = true
   
-  // 自动提取第一个标签作为分类
   const derivedCategory = blogForm.tags[0]
 
   const submitData = { 
     ...blogForm, 
-    category: derivedCategory, // 填充分类
+    category: derivedCategory, 
     tags: blogForm.tags.join(','), 
     author: currentUser.value.nickname || currentUser.value.username 
   }
@@ -291,23 +285,23 @@ const submitBlog = async () => {
     blogForm.url = ''
     blogForm.tags = []
   } catch(e) {
-    ElMessage.error('发布失败，请检查后端服务')
+    ElMessage.error('发布失败，请检查网络')
   } finally {
     isSubmitting.value = false
   } 
 }
 
 const toDetail = (id) => {
-  console.log('跳转ID:', id)
-  if (!id) {
-    ElMessage.error('文章ID无效')
-    return
-  }
+  if (!id) return
   router.push(`/blog/${id}`)
 }
 
 const handleDelete = (id) => { 
-  ElMessageBox.confirm('确定删除这篇文章吗？').then(async()=>{
+  ElMessageBox.confirm('确定要删除这篇文章吗？此操作不可恢复。', '警告', {
+    confirmButtonText: '确定删除',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(async()=>{
     await axios.delete(`http://localhost:8080/api/blog/delete/${id}`)
     loadBlogs()
     ElMessage.success('已删除')
@@ -317,6 +311,7 @@ const handleDelete = (id) => {
 const handleLogout = () => { 
   localStorage.removeItem('user')
   router.push('/login') 
+  ElMessage.success('已安全退出')
 }
 
 onMounted(() => {
@@ -325,5 +320,45 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* 去除所有复杂特效，只保留简单的颜色变化 */
+/* 布局样式 */
+.header-bar { background-color: #fff; border-bottom: 1px solid #ddd; position: sticky; top: 0; z-index: 1000; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+.header-left h2 { margin: 0; color: #409EFF; font-size: 24px; font-weight: 700; letter-spacing: 1px; }
+.user-info-cursor { display: flex; align-items: center; cursor: pointer; padding: 5px 10px; border-radius: 4px; transition: 0.3s; }
+.user-info-cursor:hover { background-color: #f5f7fa; }
+.user-avatar { background-color: #409eff; margin-right: 8px; }
+.username-text { font-weight: bold; color: #333; }
+
+.main-container { width: 1200px; margin: 20px auto; gap: 20px; }
+.menu-card { border: none; position: sticky; top: 80px; }
+.clean-menu { border: none; }
+.clean-menu :deep(.el-menu-item.is-active) { background-color: #ecf5ff; border-right: 3px solid #409eff; color: #409eff; font-weight: bold; }
+
+.tags-section { padding: 0 20px; margin-top: 20px; }
+.tags-title { font-size: 14px; color: #999; margin-bottom: 12px; font-weight: bold; }
+.tags-cloud { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag-item { cursor: pointer; transition: 0.2s; }
+.tag-item:hover { transform: translateY(-2px); }
+
+.content-main { padding: 0; overflow: visible; }
+.toolbar { margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 15px 20px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+.page-title { margin: 0; font-size: 18px; color: #333; border-left: 4px solid #409eff; padding-left: 10px; }
+.tools { display: flex; gap: 10px; }
+
+/* 博客卡片样式 */
+.blog-card { margin-bottom: 20px; height: 380px; display: flex; flex-direction: column; transition: transform 0.3s, box-shadow 0.3s; border-radius: 8px; border: none; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05); }
+.blog-card:hover { transform: translateY(-5px); box-shadow: 0 8px 16px rgba(0,0,0,0.1); }
+.blog-cover { height: 160px; width: 100%; object-fit: cover; cursor: pointer; }
+.blog-info { padding: 16px; flex: 1; display: flex; flex-direction: column; }
+.blog-title { font-weight: bold; font-size: 18px; color: #333; margin-bottom: 10px; cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.blog-title:hover { color: #409eff; }
+.blog-tags { margin-bottom: 10px; height: 24px; overflow: hidden; }
+.blog-summary { font-size: 13px; color: #666; line-height: 1.6; height: 42px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; cursor: pointer; margin-bottom: 15px; }
+.blog-footer { margin-top: auto; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #999; border-top: 1px solid #f0f0f0; padding-top: 10px; }
+.footer-stats { display: flex; align-items: center; }
+
+/* 上传样式 */
+.avatar-uploader { border: 1px dashed #d9d9d9; border-radius: 6px; cursor: pointer; position: relative; overflow: hidden; width: 100px; height: 100px; display: flex; justify-content: center; align-items: center; transition: 0.2s; }
+.avatar-uploader:hover { border-color: #409EFF; }
+.avatar-uploader-icon { font-size: 28px; color: #8c939d; }
+.avatar { width: 100px; height: 100px; display: block; object-fit: cover; }
 </style>

@@ -33,8 +33,8 @@
           <h2 style="margin-bottom: 20px;">👋 欢迎回来，{{ user.nickname || user.username }}</h2>
           <el-row :gutter="20" style="margin-bottom: 30px;">
             <el-col :span="6"><el-card shadow="hover"><h3>📝 发布文章</h3><div class="stat-num">{{ myBlogs.length }} 篇</div></el-card></el-col>
+            <el-col :span="6"><el-card shadow="hover"><h3>👍 点赞文章</h3><div class="stat-num">{{ likedList.length }} 篇</div></el-card></el-col>
             <el-col :span="6"><el-card shadow="hover"><h3>⭐️ 收藏文章</h3><div class="stat-num">{{ collectList.length }} 篇</div></el-card></el-col>
-            <el-col :span="6"><el-card shadow="hover"><h3>📅 待读列表</h3><div class="stat-num">{{ toReadList.length }} 篇</div></el-card></el-col>
             <el-col :span="6">
               <el-card shadow="hover">
                 <h3>⏱️ 学习时长</h3>
@@ -51,6 +51,22 @@
         <div v-if="activeMenu === 'bookshelf'">
           <el-tabs v-model="activeTab" type="card">
             
+            <el-tab-pane label="👍 我的点赞" name="likes">
+               <el-table :data="likedList" style="width: 100%" empty-text="暂无点赞内容">
+                 <el-table-column prop="title" label="标题">
+                   <template #default="scope">
+                     <el-link type="primary" @click="$router.push(`/blog/${scope.row.id}`)">{{ scope.row.title }}</el-link>
+                   </template>
+                 </el-table-column>
+                 <el-table-column prop="author" label="作者" width="120"></el-table-column>
+                 <el-table-column label="操作" width="100">
+                   <template #default="scope">
+                     <el-button size="small" type="danger" link @click="handleCancelLike(scope.row.id)">取消点赞</el-button>
+                   </template>
+                 </el-table-column>
+               </el-table>
+            </el-tab-pane>
+
             <el-tab-pane label="⭐️ 我的收藏" name="collect">
                <el-table :data="collectList" style="width: 100%" empty-text="暂无收藏">
                  <el-table-column prop="title" label="标题">
@@ -142,15 +158,18 @@ import * as echarts from 'echarts'
 const router = useRouter()
 const user = ref(JSON.parse(localStorage.getItem('user') || '{}'))
 const activeMenu = ref('dashboard')
-const activeTab = ref('collect')
+// 默认显示“我的点赞”
+const activeTab = ref('likes')
 
 // 数据源
 const myBlogs = ref([])
 const collectList = ref([])
 const toReadList = ref([])
 const historyList = ref([])
+// ✨✨ 新增：点赞列表数据源
+const likedList = ref([])
+
 const userForm = reactive({ ...user.value, password: '' })
-// ✨ 新增：学习时长变量（单位：秒）
 const totalDuration = ref(0)
 
 // 切换菜单
@@ -167,9 +186,8 @@ const fetchAllData = async () => {
   if (!user.value.id) return
 
   try {
-    // 1. 获取我的文章 (前端过滤，省事)
+    // 1. 获取我的文章
     const allRes = await axios.get('http://localhost:8080/api/blog/all')
-    // 兼容：判断 author 名字是否匹配
     myBlogs.value = allRes.data.filter(b => b.author === user.value.nickname || b.author === user.value.username)
 
     // 2. 获取收藏列表 (Type=1)
@@ -180,13 +198,17 @@ const fetchAllData = async () => {
     const toReadRes = await axios.get('http://localhost:8080/api/action/list', { params: { userId: user.value.id, type: 2 } })
     toReadList.value = toReadRes.data
 
-    // 4. 获取历史记录 (之前写的接口)
+    // 4. 获取历史记录
     const historyRes = await axios.get('http://localhost:8080/api/blog/history', { params: { userId: user.value.id } })
     historyList.value = historyRes.data
     
-    // ✨ 5. 新增：获取真实学习时长
+    // 5. 获取真实学习时长
     const statsRes = await axios.get('http://localhost:8080/api/user/stats', { params: { userId: user.value.id } })
     totalDuration.value = statsRes.data || 0
+
+    // ✨✨ 6. 新增：获取我的点赞列表 ✨✨
+    const likeRes = await axios.get('http://localhost:8080/api/blog/my-likes', { params: { userId: user.value.id } })
+    likedList.value = likeRes.data
 
   } catch (e) {
     console.error('加载个人数据失败', e)
@@ -197,6 +219,14 @@ const fetchAllData = async () => {
 const removeAction = async (blogId, type) => {
   await axios.post(`http://localhost:8080/api/action/toggle?blogId=${blogId}&userId=${user.value.id}&type=${type}`)
   ElMessage.success('已移除')
+  fetchAllData() // 刷新列表
+}
+
+// ✨✨ 新增：取消点赞逻辑 ✨✨
+const handleCancelLike = async (blogId) => {
+  // 调用点赞接口（再次调用即取消）
+  await axios.post(`http://localhost:8080/api/blog/like?blogId=${blogId}&userId=${user.value.id}`)
+  ElMessage.success('已取消点赞')
   fetchAllData() // 刷新列表
 }
 
@@ -231,21 +261,20 @@ const initCharts = async () => {
   await nextTick()
   const chartDom = document.getElementById('radarChart')
   if (chartDom) {
-    // ✨✨✨ 重点修改：调用后端真实画像接口 ✨✨✨
     try {
       const res = await axios.get(`http://localhost:8080/api/user/radar?userId=${user.value.id}`)
-      const radarData = res.data // 拿到后端算好的数据
+      const radarData = res.data
 
       const myChart = echarts.init(chartDom)
       myChart.setOption({
         radar: {
-          indicator: radarData.indicators // 使用后端返回的维度
+          indicator: radarData.indicators
         },
         series: [{
           type: 'radar',
           data: [
             { 
-              value: radarData.values, // 使用后端返回的数值
+              value: radarData.values,
               name: '阅读偏好' 
             }
           ]
