@@ -63,19 +63,11 @@ public class BlogController {
 
     // --- 点赞相关功能 ---
 
-    // 7. 点赞/取消点赞
+    // 7. 点赞/取消点赞 (✨✨ 修改：改为调用 Service 事务方法)
     @PostMapping("/like")
     public String toggleLike(@RequestParam Long blogId, @RequestParam Long userId) {
-        int count = blogMapper.checkIsLiked(userId, blogId);
-        if (count == 0) {
-            blogMapper.addLike(userId, blogId);
-            blogMapper.incrementLikes(blogId);
-            return "点赞成功";
-        } else {
-            blogMapper.removeLike(userId, blogId);
-            blogMapper.decrementLikes(blogId);
-            return "取消成功";
-        }
+        // 原有 Controller 逻辑存在并发风险，现已移至 Service 层
+        return blogService.toggleLike(blogId, userId);
     }
 
     // 8. 检查是否点赞

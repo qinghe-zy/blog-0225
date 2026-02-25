@@ -36,6 +36,10 @@ public interface BlogMapper {
     @Update("UPDATE blog SET title=#{title}, content=#{content}, category=#{category}, tags=#{tags}, url=#{url}, summary=#{summary} WHERE id=#{id}")
     void update(Blog blog);
 
+    // ✨✨ 新增：更新博客评分
+    @Update("UPDATE blog SET score = #{score} WHERE id = #{id}")
+    void updateScore(@Param("id") Long id, @Param("score") Double score);
+
     // 浏览量+1
     @Update("UPDATE blog SET views = views + 1 WHERE id = #{id}")
     void incrementViews(Long id);

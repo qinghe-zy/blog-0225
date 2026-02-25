@@ -10,6 +10,7 @@
       <div class="meta-info">
         <span>👤 {{ blog.author }}</span>
         <span>🔥 阅读：{{ blog.views }}</span>
+        <span v-if="blog.score > 0">⭐ 评分：{{ blog.score }}</span>
         <span>🕒 {{ blog.createTime }}</span>
       </div>
 
@@ -63,6 +64,11 @@
       <div class="comment-section">
         <h3>💬 评论区</h3>
         
+        <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 14px; color: #666;">给文章打分:</span>
+          <el-rate v-model="newScore" allow-half show-text></el-rate>
+        </div>
+
         <div style="display: flex; gap: 10px; margin-bottom: 20px;">
           <el-input 
             v-model="newComment" 
@@ -77,6 +83,7 @@
             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
               <el-avatar :size="30" style="background-color: #66ccff;">{{ (item.username || '匿').charAt(0) }}</el-avatar>
               <span style="font-weight: bold; font-size: 14px; color: #333;">{{ item.username }}</span>
+              <el-rate v-if="item.score" v-model="item.score" disabled size="small"></el-rate>
               <span style="font-size: 12px; color: #999;">{{ item.createTime }}</span>
             </div>
             <div style="padding-left: 40px; color: #666;">
@@ -141,7 +148,9 @@ const router = useRouter()
 const md = new MarkdownIt()
 const blog = ref({}) 
 const comments = ref([]) 
-const newComment = ref('') 
+const newComment = ref('')
+// ✨✨ 新增：评分变量
+const newScore = ref(0) 
 const userStore = localStorage.getItem('user')
 const currentUser = userStore ? JSON.parse(userStore) : null
 
@@ -261,10 +270,13 @@ const handleLike = async () => {
   if (!currentUser) return ElMessage.warning('请先登录')
   const res = await axios.post(`http://localhost:8080/api/blog/like?blogId=${blog.value.id}&userId=${currentUser.id}`)
   
-  if (res.data === '点赞成功') {
+  if (res.data === '点赞成功' || res.data === '您已点赞') {
     isLiked.value = true
-    blog.value.likes = (blog.value.likes || 0) + 1
-    ElMessage.success('点赞成功')
+    // 只有返回"点赞成功"才+1，防止重复点击
+    if (res.data === '点赞成功') {
+      blog.value.likes = (blog.value.likes || 0) + 1
+      ElMessage.success('点赞成功')
+    }
   } else {
     isLiked.value = false
     blog.value.likes = (blog.value.likes || 0) - 1
@@ -311,11 +323,14 @@ const submitComment = async () => {
     content: newComment.value,
     userId: currentUser.id,
     username: currentUser.nickname || currentUser.username,
-    blogId: route.params.id
+    blogId: route.params.id,
+    score: newScore.value // ✨✨ 新增：传入评分
   })
   ElMessage.success('评论成功')
   newComment.value = ''
+  newScore.value = 0 // 重置评分
   loadComments(route.params.id)
+  loadDetail(route.params.id) // 刷新详情以获取最新平均分
 }
 
 // 编辑逻辑

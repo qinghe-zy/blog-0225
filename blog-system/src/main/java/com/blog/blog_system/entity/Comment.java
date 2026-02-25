@@ -7,6 +7,8 @@ public class Comment {
     private Long userId;
     private String username;
     private Long blogId;
+    // ✨✨ 新增：评分字段 (1.0 - 5.0)
+    private Double score;
 
     // 省略 Getter/Setter，如果你没装 Lombok 插件，请手动生成！
     public Long getId() { return id; }
@@ -21,4 +23,8 @@ public class Comment {
     public void setUsername(String username) { this.username = username; }
     public Long getBlogId() { return blogId; }
     public void setBlogId(Long blogId) { this.blogId = blogId; }
+
+    // ✨✨ 新增 Getter/Setter
+    public Double getScore() { return score; }
+    public void setScore(Double score) { this.score = score; }
 }

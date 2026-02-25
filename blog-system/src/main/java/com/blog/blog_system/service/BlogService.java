@@ -1,10 +1,14 @@
 package com.blog.blog_system.service;
 
 import com.blog.blog_system.entity.Blog;
+import com.blog.blog_system.entity.Comment;
 import com.blog.blog_system.mapper.BlogMapper;
+import com.blog.blog_system.mapper.CommentMapper;
 import com.blog.blog_system.mapper.VisitLogMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import java.util.*;
 
 @Service
@@ -15,6 +19,9 @@ public class BlogService {
 
     @Autowired
     private VisitLogMapper visitLogMapper;
+
+    @Autowired
+    private CommentMapper commentMapper; // ✨✨ 注入评论 Mapper
 
     // ... (保留 getAllBlogs, saveBlog, searchBlogs, updateBlog, deleteBlog 等原有方法，不要删除) ...
 
@@ -68,7 +75,7 @@ public class BlogService {
     }
 
     /**
-     * ✨✨✨ 升级版：首页个性化推荐 (基于加权算法) ✨✨✨
+     * 首页个性化推荐 (基于加权算法)
      * 权重规则：
      * - 阅读 (View): 1分
      * - 点赞 (Like): 3分
@@ -128,6 +135,61 @@ public class BlogService {
                     scores.put(t, scores.getOrDefault(t, 0) + weight);
                 }
             }
+        }
+    }
+
+    // ================== ✨✨ 新增核心逻辑 ✨✨ ==================
+
+    /**
+     * ✨ 修复：事务性点赞逻辑
+     * 加上 @Transactional，保证“记录点赞”和“文章点赞数+1”原子性操作
+     * 解决并发导致的“复数”或数据不一致问题
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public String toggleLike(Long blogId, Long userId) {
+        int count = blogMapper.checkIsLiked(userId, blogId);
+        if (count == 0) {
+            // 没点过 -> 点赞
+            try {
+                blogMapper.addLike(userId, blogId);
+                blogMapper.incrementLikes(blogId);
+                return "点赞成功";
+            } catch (Exception e) {
+                // 如果并发导致重复插入(触发唯一索引冲突)，这里捕获异常，防止报错
+                return "您已点赞";
+            }
+        } else {
+            // 点过 -> 取消
+            blogMapper.removeLike(userId, blogId);
+            blogMapper.decrementLikes(blogId);
+            return "取消成功";
+        }
+    }
+
+    /**
+     * ✨ 新增：发表评论并更新平均分
+     * 事务控制：评论入库失败，分数也不会乱更新
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public String addComment(Comment comment) {
+        // 1. 插入评论
+        commentMapper.insert(comment);
+
+        // 2. 如果用户打了分，重新计算该博客的平均分
+        if (comment.getScore() != null && comment.getScore() > 0) {
+            updateBlogAverageScore(comment.getBlogId());
+        }
+        return "评论成功";
+    }
+
+    // 辅助方法：计算并更新平均分
+    private void updateBlogAverageScore(Long blogId) {
+        // 获取该博客所有评分的平均值
+        Double avgScore = commentMapper.calculateAvgScore(blogId);
+        if (avgScore != null) {
+            // 保留一位小数
+            double formattedScore = (double) Math.round(avgScore * 10) / 10;
+            blogMapper.updateScore(blogId, formattedScore);
         }
     }
 }
