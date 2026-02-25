@@ -157,8 +157,8 @@ const totalDuration = ref(0)
 const handleSelect = async (index) => {
   activeMenu.value = index
   if (index === 'dashboard') {
-    fetchAllData() // 刷新数据以便统计
-    initCharts()
+    await fetchAllData() // 刷新数据以便统计
+    initCharts() // 然后再画图
   }
 }
 
@@ -167,8 +167,9 @@ const fetchAllData = async () => {
   if (!user.value.id) return
 
   try {
-    // 1. 获取我的文章 (前端过滤)
+    // 1. 获取我的文章 (前端过滤，省事)
     const allRes = await axios.get('http://localhost:8080/api/blog/all')
+    // 兼容：判断 author 名字是否匹配
     myBlogs.value = allRes.data.filter(b => b.author === user.value.nickname || b.author === user.value.username)
 
     // 2. 获取收藏列表 (Type=1)
@@ -179,11 +180,11 @@ const fetchAllData = async () => {
     const toReadRes = await axios.get('http://localhost:8080/api/action/list', { params: { userId: user.value.id, type: 2 } })
     toReadList.value = toReadRes.data
 
-    // 4. 获取历史记录
+    // 4. 获取历史记录 (之前写的接口)
     const historyRes = await axios.get('http://localhost:8080/api/blog/history', { params: { userId: user.value.id } })
     historyList.value = historyRes.data
-
-    // ✨ 5. 新增：获取用户真实统计数据（阅读时长）
+    
+    // ✨ 5. 新增：获取真实学习时长
     const statsRes = await axios.get('http://localhost:8080/api/user/stats', { params: { userId: user.value.id } })
     totalDuration.value = statsRes.data || 0
 
@@ -230,23 +231,29 @@ const initCharts = async () => {
   await nextTick()
   const chartDom = document.getElementById('radarChart')
   if (chartDom) {
-    const myChart = echarts.init(chartDom)
-    // 模拟数据：后续会接入后端真实统计
-    myChart.setOption({
-      radar: {
-        indicator: [
-          { name: 'Java', max: 100 }, { name: 'Vue', max: 100 },
-          { name: '算法', max: 100 }, { name: '面试', max: 100 },
-          { name: '生活', max: 100 }
-        ]
-      },
-      series: [{
-        type: 'radar',
-        data: [
-          { value: [80, 50, 40, 70, 30], name: '阅读偏好' }
-        ]
-      }]
-    })
+    // ✨✨✨ 重点修改：调用后端真实画像接口 ✨✨✨
+    try {
+      const res = await axios.get(`http://localhost:8080/api/user/radar?userId=${user.value.id}`)
+      const radarData = res.data // 拿到后端算好的数据
+
+      const myChart = echarts.init(chartDom)
+      myChart.setOption({
+        radar: {
+          indicator: radarData.indicators // 使用后端返回的维度
+        },
+        series: [{
+          type: 'radar',
+          data: [
+            { 
+              value: radarData.values, // 使用后端返回的数值
+              name: '阅读偏好' 
+            }
+          ]
+        }]
+      })
+    } catch (e) {
+      console.error('图表加载失败', e)
+    }
   }
 }
 

@@ -5,6 +5,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
+import java.util.List;
 
 @Mapper
 public interface VisitLogMapper {
@@ -26,4 +27,10 @@ public interface VisitLogMapper {
     // IFNULL 避免如果用户一条记录都没有时返回 null 报错
     @Select("SELECT IFNULL(SUM(duration), 0) FROM visit_log WHERE user_id = #{userId}")
     Integer sumDurationByUserId(Long userId);
+    // 关联 blog 表，把用户看过的文章的 tags 字段全查出来
+    @Select("SELECT b.tags FROM visit_log v " +
+            "JOIN blog b ON v.blog_id = b.id " +
+            "WHERE v.user_id = #{userId} AND b.tags IS NOT NULL AND b.tags != ''")
+    List<String> selectViewedTags(Long userId);
+
 }

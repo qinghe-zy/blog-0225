@@ -6,6 +6,7 @@ import com.blog.blog_system.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import com.blog.blog_system.mapper.VisitLogMapper;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/user")
@@ -78,5 +79,13 @@ public class UserController {
     public Integer getStats(@RequestParam Long userId) {
         // 调用 Mapper 查询该用户的总阅读时长（秒）
         return visitLogMapper.sumDurationByUserId(userId);
+    }
+    /**
+     * ✨✨✨ 新增：获取雷达图数据 ✨✨✨
+     * GET /api/user/radar?userId=1
+     */
+    @GetMapping("/radar")
+    public Map<String, Object> getRadar(@RequestParam Long userId) {
+        return userService.getUserRadar(userId);
     }
 }
