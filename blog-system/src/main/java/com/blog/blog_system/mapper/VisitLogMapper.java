@@ -23,14 +23,31 @@ public interface VisitLogMapper {
                         @Param("blogId") Long blogId,
                         @Param("seconds") Integer seconds);
 
-    // 新增：统计用户总阅读时长 (秒)
-    // IFNULL 避免如果用户一条记录都没有时返回 null 报错
+    // 统计总时长
     @Select("SELECT IFNULL(SUM(duration), 0) FROM visit_log WHERE user_id = #{userId}")
     Integer sumDurationByUserId(Long userId);
-    // 关联 blog 表，把用户看过的文章的 tags 字段全查出来
+
+    // 查询看过的标签
     @Select("SELECT b.tags FROM visit_log v " +
             "JOIN blog b ON v.blog_id = b.id " +
             "WHERE v.user_id = #{userId} AND b.tags IS NOT NULL AND b.tags != ''")
     List<String> selectViewedTags(Long userId);
 
+    /**
+     * ✨✨✨ 新增：查询用户点赞过的文章标签 ✨✨✨
+     * 关联 user_like 表和 blog 表
+     */
+    @Select("SELECT b.tags FROM user_like ul " +
+            "JOIN blog b ON ul.blog_id = b.id " +
+            "WHERE ul.user_id = #{userId} AND b.tags IS NOT NULL AND b.tags != ''")
+    List<String> selectLikedTags(Long userId);
+
+    /**
+     * ✨✨✨ 新增：查询用户收藏过的文章标签 ✨✨✨
+     * 关联 user_action 表 (type=1为收藏) 和 blog 表
+     */
+    @Select("SELECT b.tags FROM user_action ua " +
+            "JOIN blog b ON ua.blog_id = b.id " +
+            "WHERE ua.user_id = #{userId} AND ua.type = 1 AND b.tags IS NOT NULL AND b.tags != ''")
+    List<String> selectCollectedTags(Long userId);
 }

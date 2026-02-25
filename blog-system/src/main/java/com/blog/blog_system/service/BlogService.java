@@ -5,8 +5,7 @@ import com.blog.blog_system.mapper.BlogMapper;
 import com.blog.blog_system.mapper.VisitLogMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import java.util.List;
-import java.util.Collections;
+import java.util.*;
 
 @Service
 public class BlogService {
@@ -17,9 +16,9 @@ public class BlogService {
     @Autowired
     private VisitLogMapper visitLogMapper;
 
-    public List<Blog> getAllBlogs() {
-        return blogMapper.findAll();
-    }
+    // ... (保留 getAllBlogs, saveBlog, searchBlogs, updateBlog, deleteBlog 等原有方法，不要删除) ...
+
+    public List<Blog> getAllBlogs() { return blogMapper.findAll(); }
 
     public String saveBlog(Blog blog) {
         if (blog.getSummary() == null || blog.getSummary().isEmpty()) {
@@ -31,19 +30,13 @@ public class BlogService {
         return "发布成功！";
     }
 
-    public List<Blog> searchBlogs(String keyword) {
-        return blogMapper.search(keyword);
-    }
+    public List<Blog> searchBlogs(String keyword) { return blogMapper.search(keyword); }
 
-    public String updateBlog(Blog blog) {
-        blogMapper.update(blog);
-        return "修改成功！";
-    }
+    public String updateBlog(Blog blog) { blogMapper.update(blog); return "修改成功！"; }
 
-    public void deleteBlog(Long id) {
-        blogMapper.deleteById(id);
-    }
+    public void deleteBlog(Long id) { blogMapper.deleteById(id); }
 
+    // 详情逻辑
     public Blog getBlogDetail(Long id, Long userId) {
         blogMapper.incrementViews(id);
         if (userId != null) {
@@ -56,41 +49,85 @@ public class BlogService {
         return blogMapper.findById(id);
     }
 
-    public List<Blog> getHotBlogs() {
-        return blogMapper.findHotBlogs();
-    }
+    public List<Blog> getHotBlogs() { return blogMapper.findHotBlogs(); }
 
-    public List<Blog> getRecentBlogs(Long userId) {
-        return blogMapper.findRecentBlogs(userId);
-    }
+    public List<Blog> getRecentBlogs(Long userId) { return blogMapper.findRecentBlogs(userId); }
 
-    /**
-     * ✨✨✨ 新增：获取相关推荐逻辑 ✨✨✨
-     * 策略：
-     * 1. 提取当前文章的第一个标签作为核心关键词。
-     * 2. 去数据库搜同标签的文章。
-     * 3. 如果没标签或没搜到，降级为推荐热门文章（兜底策略）。
-     */
     public List<Blog> getRelatedBlogs(Long id) {
         Blog currentBlog = blogMapper.findById(id);
-
-        // 防御性编程：如果文章不存在或没有标签，直接返回热门
         if (currentBlog == null || currentBlog.getTags() == null || currentBlog.getTags().trim().isEmpty()) {
             return blogMapper.findHotBlogs();
         }
-
-        // 提取第一个标签 (支持中文或英文逗号)
         String[] tags = currentBlog.getTags().split("[,，]");
         String firstTag = tags[0].trim();
-
-        // 查询相关
         List<Blog> related = blogMapper.findRelatedBlogs(id, firstTag);
-
-        // 防御性编程：如果也没搜到相关文章，还是返回热门，保证前端不空
         if (related == null || related.isEmpty()) {
             return blogMapper.findHotBlogs();
         }
-
         return related;
+    }
+
+    /**
+     * ✨✨✨ 升级版：首页个性化推荐 (基于加权算法) ✨✨✨
+     * 权重规则：
+     * - 阅读 (View): 1分
+     * - 点赞 (Like): 3分
+     * - 收藏 (Collect): 5分
+     */
+    public List<Blog> getPersonalizedBlogs(Long userId) {
+        // 1. 获取三种行为的标签数据
+        List<String> viewedTags = visitLogMapper.selectViewedTags(userId);
+        List<String> likedTags = visitLogMapper.selectLikedTags(userId);
+        List<String> collectedTags = visitLogMapper.selectCollectedTags(userId);
+
+        // 冷启动防御：如果没有任何行为，返回热门
+        if (viewedTags.isEmpty() && likedTags.isEmpty() && collectedTags.isEmpty()) {
+            return blogMapper.findHotBlogs();
+        }
+
+        // 2. 定义分数统计池
+        Map<String, Integer> tagScores = new HashMap<>();
+
+        // 3. 计算阅读分数 (权重 1)
+        calculateScore(tagScores, viewedTags, 1);
+
+        // 4. 计算点赞分数 (权重 3)
+        calculateScore(tagScores, likedTags, 3);
+
+        // 5. 计算收藏分数 (权重 5)
+        calculateScore(tagScores, collectedTags, 5);
+
+        // 6. 找出最高分的标签 (Top 1)
+        String topTag = "";
+        int maxScore = 0;
+        for (Map.Entry<String, Integer> entry : tagScores.entrySet()) {
+            if (entry.getValue() > maxScore) {
+                maxScore = entry.getValue();
+                topTag = entry.getKey();
+            }
+        }
+
+        // 7. 根据Top标签查询文章
+        if (!topTag.isEmpty()) {
+            return blogMapper.findBlogsByTag(topTag);
+        }
+
+        return blogMapper.findHotBlogs();
+    }
+
+    /**
+     * 辅助方法：计算标签得分
+     */
+    private void calculateScore(Map<String, Integer> scores, List<String> tags, int weight) {
+        if (tags == null) return;
+        for (String tagStr : tags) {
+            String[] splitTags = tagStr.split("[,，]");
+            for (String t : splitTags) {
+                t = t.trim();
+                if (!t.isEmpty()) {
+                    scores.put(t, scores.getOrDefault(t, 0) + weight);
+                }
+            }
+        }
     }
 }

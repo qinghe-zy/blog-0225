@@ -32,6 +32,9 @@
               <el-menu-item index="2" @click="loadHotBlogs">
                 <el-icon><Trophy /></el-icon><span style="color: #ff502c;">全站热门</span>
               </el-menu-item>
+              <el-menu-item index="3" @click="loadRecommend">
+                <el-icon><Star /></el-icon><span style="color: #67C23A;">猜你喜欢</span>
+              </el-menu-item>
             </el-menu>
 
             <el-divider></el-divider>
@@ -180,7 +183,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
-import { Plus, ArrowDown, Document, Trophy, Search } from '@element-plus/icons-vue'
+import { Plus, ArrowDown, Document, Trophy, Search, Star } from '@element-plus/icons-vue' // 引入 Star 图标
 
 const router = useRouter()
 const listTitle = ref('全部文章')
@@ -213,6 +216,8 @@ const loadBlogs = async () => {
   try {
     const res = await axios.get('http://localhost:8080/api/blog/all')
     blogList.value = res.data
+    listTitle.value = '全部文章'
+    currentMenu.value = '1'
   } catch (e) {
     ElMessage.error('获取文章失败')
   }
@@ -229,6 +234,24 @@ const loadHotBlogs = async () => {
   }
 }
 
+/**
+ * ✨✨✨ 新增：加载个性化推荐 ✨✨✨
+ */
+const loadRecommend = async () => {
+  if (!currentUser.value.id) {
+    ElMessage.warning('请先登录查看推荐')
+    return
+  }
+  try {
+    const res = await axios.get(`http://localhost:8080/api/blog/recommend?userId=${currentUser.value.id}`)
+    blogList.value = res.data
+    listTitle.value = '猜你喜欢 (基于您的兴趣)'
+    currentMenu.value = '3'
+  } catch (e) {
+    ElMessage.error('获取推荐失败')
+  }
+}
+
 const handleSearch = async () => { 
   if(!searchKeyword.value) return loadBlogs()
   try {
@@ -240,7 +263,7 @@ const handleSearch = async () => {
   }
 }
 
-// ✨ 修改点2：提交逻辑，取第一个标签为分类
+// 修改点2：提交逻辑，取第一个标签为分类
 const submitBlog = async () => {
   if (!blogForm.title || !blogForm.content) return ElMessage.warning('请填写标题和正文')
   if (blogForm.tags.length === 0) return ElMessage.warning('请至少输入一个标签') // 新增校验
@@ -302,4 +325,5 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 去除所有复杂特效，只保留简单的颜色变化 */
 </style>

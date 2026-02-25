@@ -5,6 +5,8 @@ import com.blog.blog_system.mapper.BlogMapper;
 import com.blog.blog_system.service.BlogService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import com.blog.blog_system.mapper.VisitLogMapper;
+
 import java.util.List;
 
 @RestController
@@ -17,6 +19,9 @@ public class BlogController {
 
     @Autowired
     private BlogMapper blogMapper;
+
+    @Autowired
+    private VisitLogMapper visitLogMapper;
 
     // 1. 获取所有博客
     @GetMapping("/all")
@@ -43,10 +48,7 @@ public class BlogController {
         return "删除成功！";
     }
 
-    /**
-     * 5. ✨ 详情接口：增加 userId 参数，用于埋点记录浏览历史
-     * GET /api/blog/detail/{id}?userId=xxx
-     */
+    // 5. ✨ 详情接口：增加 userId 参数，用于埋点记录浏览历史
     @GetMapping("/detail/{id}")
     public Blog detail(@PathVariable Long id, @RequestParam(required = false) Long userId) {
         // 调用升级后的 Service 方法 (需确保 Service 层已处理 userId 的埋点逻辑)
@@ -61,10 +63,7 @@ public class BlogController {
 
     // --- 点赞相关功能 ---
 
-    /**
-     * 7. 点赞/取消点赞
-     * POST /api/blog/like?blogId=1&userId=1
-     */
+    // 7. 点赞/取消点赞
     @PostMapping("/like")
     public String toggleLike(@RequestParam Long blogId, @RequestParam Long userId) {
         int count = blogMapper.checkIsLiked(userId, blogId);
@@ -79,19 +78,13 @@ public class BlogController {
         }
     }
 
-    /**
-     * 8. 检查是否点赞
-     * GET /api/blog/checkLike?blogId=1&userId=1
-     */
+    // 8. 检查是否点赞
     @GetMapping("/checkLike")
     public Boolean checkLike(@RequestParam Long blogId, @RequestParam Long userId) {
         return blogMapper.checkIsLiked(userId, blogId) > 0;
     }
 
-    /**
-     * 9. 我的点赞列表
-     * GET /api/blog/my-likes?userId=1
-     */
+    // 9. 我的点赞列表
     @GetMapping("/my-likes")
     public List<Blog> myLikes(@RequestParam Long userId) {
         return blogMapper.findLikedBlogs(userId);
@@ -99,29 +92,19 @@ public class BlogController {
 
     // --- ✨ 新增：行为埋点与榜单功能 ---
 
-    /**
-     * 10.获取全站热门榜单
-     * GET /api/blog/hot
-     */
+    // 10.获取全站热门榜单
     @GetMapping("/hot")
     public List<Blog> hot() {
         return blogService.getHotBlogs();
     }
 
-    /**
-     * 11. 获取我的浏览历史
-     * GET /api/blog/history?userId=xxx
-     */
+    // 11. 获取我的浏览历史
     @GetMapping("/history")
     public List<Blog> history(@RequestParam Long userId) {
         return blogService.getRecentBlogs(userId);
     }
-    @Autowired
-    private com.blog.blog_system.mapper.VisitLogMapper visitLogMapper; // 确保注入了 Mapper
-    /**
-     * 新增：上报阅读时长接口
-     * POST /api/blog/duration?userId=1&blogId=2&seconds=10
-     */
+
+    // 新增：上报阅读时长接口
     @PostMapping("/duration")
     public String logDuration(@RequestParam Long userId,
                               @RequestParam Long blogId,
@@ -130,9 +113,19 @@ public class BlogController {
         visitLogMapper.updateDuration(userId, blogId, seconds);
         return "记录成功";
     }
-    //相关推荐接口
+
+    // 获取相关推荐接口
     @GetMapping("/related/{id}")
     public List<Blog> related(@PathVariable Long id) {
         return blogService.getRelatedBlogs(id);
+    }
+
+    /**
+     * 新增：首页个性化推荐接口 (猜你喜欢)
+     * GET /api/blog/recommend?userId=1
+     */
+    @GetMapping("/recommend")
+    public List<Blog> recommend(@RequestParam Long userId) {
+        return blogService.getPersonalizedBlogs(userId);
     }
 }

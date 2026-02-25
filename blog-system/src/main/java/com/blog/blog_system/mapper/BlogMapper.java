@@ -83,10 +83,17 @@ public interface BlogMapper {
     @Update("UPDATE blog SET collects = collects - 1 WHERE id = #{id}")
     void decrementCollects(Long id);
 
-    // 新增：相关推荐查询
-    // 逻辑：查找包含指定标签(keyword)的文章，排除当前这篇(id)，按阅读量排序取前5
+    // 相关推荐查询
     @Select("SELECT * FROM blog WHERE id != #{id} " +
             "AND tags LIKE CONCAT('%', #{keyword}, '%') " +
             "ORDER BY views DESC LIMIT 5")
     List<Blog> findRelatedBlogs(@Param("id") Long id, @Param("keyword") String keyword);
+
+    /**
+     * 新增：根据标签查询博客 (用于首页个性化推荐) ✨✨✨
+     * @param tag 标签关键词
+     * @return 匹配的博客列表，按热度排序
+     */
+    @Select("SELECT * FROM blog WHERE tags LIKE CONCAT('%', #{tag}, '%') ORDER BY views DESC LIMIT 10")
+    List<Blog> findBlogsByTag(String tag);
 }
