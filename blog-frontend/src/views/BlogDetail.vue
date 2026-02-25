@@ -2,7 +2,7 @@
   <div class="detail-container">
     <el-card class="detail-card">
       <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
-        <el-button @click="$router.push('/home')">⬅️ 返回列表</el-button>
+        <el-button @click="goBack">⬅️ 返回上一页</el-button>
         <el-button v-if="isAuthor" type="primary" @click="handleEdit">✏️ 编辑文章</el-button>
       </div>
 
@@ -173,6 +173,17 @@ const isAuthor = computed(() => {
   if (!currentUser || !blog.value.author) return false
   return currentUser.username === blog.value.author || currentUser.nickname === blog.value.author
 })
+
+// ✨✨ 新增：智能返回逻辑 ✨✨
+const goBack = () => {
+  // 如果历史记录栈有内容（说明是从站内点过来的），就返回上一页
+  // 否则（比如用户直接复制详情页链接打开），默认回首页
+  if (window.history.length > 1) {
+    router.back()
+  } else {
+    router.push('/home')
+  }
+}
 
 // ✨ 3. 核心：页面销毁/跳转时上报阅读时长
 onBeforeUnmount(() => {
