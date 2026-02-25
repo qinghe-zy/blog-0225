@@ -16,13 +16,16 @@ public interface UserMapper {
     @Select("SELECT * FROM user WHERE username = #{username}")
     User findByUsername(String username);
 
-    @Insert("INSERT INTO user(username, password, email, create_time) " +
-            "VALUES(#{username}, #{password}, #{email}, NOW())")
+    // ✨✨ 修改：插入时增加 avatar 字段 (nickname 注册时通常为空，暂不加入以保持你原有的精简风格)
+    @Insert("INSERT INTO user(username, password, email, avatar, create_time) " +
+            "VALUES(#{username}, #{password}, #{email}, #{avatar}, NOW())")
     void insert(User user);
-    //新增：更新用户信息（昵称、密码等）
-    @Update("UPDATE user SET nickname=#{nickname}, password=#{password} WHERE id=#{id}")
+
+    // ✨✨ 修改：更新时增加 avatar 字段
+    @Update("UPDATE user SET nickname=#{nickname}, password=#{password}, avatar=#{avatar} WHERE id=#{id}")
     void update(User user);
-    //新增：根据 ID 查用户 (为了获取旧密码)
+
+    // 根据 ID 查用户 (为了获取旧密码)
     @Select("SELECT * FROM user WHERE id = #{id}")
     User findById(Long id);
 }

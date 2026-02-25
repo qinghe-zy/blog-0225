@@ -14,4 +14,5 @@ public class User {
     private String email;
     private LocalDateTime createTime;
     private String nickname;//昵称
+    private String avatar;//头像
 }

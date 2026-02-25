@@ -3,7 +3,9 @@
     <el-header class="header">
       <div class="logo" @click="$router.push('/home')">✨ 返回首页</div>
       <div class="user-info">
-        <el-avatar :size="30" style="background-color: #409eff; margin-right: 10px;">{{ (user.nickname || user.username || 'U').charAt(0) }}</el-avatar>
+        <el-avatar v-if="user.avatar" :size="30" :src="user.avatar" style="margin-right: 10px;"></el-avatar>
+        <el-avatar v-else :size="30" style="background-color: #409eff; margin-right: 10px;">{{ (user.nickname || user.username || 'U').charAt(0) }}</el-avatar>
+        
         <span>{{ user.nickname || user.username }}的个人中心</span>
         <el-button type="danger" size="small" @click="handleLogout" style="margin-left: 20px;">退出</el-button>
       </div>
@@ -50,7 +52,6 @@
 
         <div v-if="activeMenu === 'bookshelf'">
           <el-tabs v-model="activeTab" type="card">
-            
             <el-tab-pane label="👍 我的点赞" name="likes">
                <el-table :data="likedList" style="width: 100%" empty-text="暂无点赞内容">
                  <el-table-column prop="title" label="标题">
@@ -106,7 +107,6 @@
                </div>
                <el-empty v-if="historyList.length===0" description="暂无浏览记录"></el-empty>
             </el-tab-pane>
-
           </el-tabs>
         </div>
 
@@ -132,6 +132,17 @@
           <el-card style="width: 500px;">
             <div slot="header"><b>✏️ 修改资料</b></div>
             <el-form :model="userForm" label-width="80px">
+              <el-form-item label="头像">
+                 <el-upload 
+                    action="http://localhost:8080/api/upload" 
+                    :show-file-list="false" 
+                    :on-success="(res)=>{userForm.avatar=res; ElMessage.success('头像上传成功')}" 
+                    style="border: 1px dashed #d9d9d9; width: 80px; height: 80px; border-radius: 50%; display: flex; justify-content: center; align-items: center; cursor: pointer; overflow: hidden;"
+                  >
+                    <img v-if="userForm.avatar" :src="userForm.avatar" style="width: 100%; height: 100%; object-fit: cover;"/>
+                    <el-icon v-else :size="20" color="#8c939d"><Plus/></el-icon>
+                  </el-upload>
+              </el-form-item>
               <el-form-item label="账号"><el-input v-model="userForm.username" disabled></el-input></el-form-item>
               <el-form-item label="昵称"><el-input v-model="userForm.nickname"></el-input></el-form-item>
               <el-form-item label="新密码"><el-input v-model="userForm.password" type="password" show-password placeholder="不改请留空"></el-input></el-form-item>
@@ -150,7 +161,7 @@
 <script setup>
 import { ref, reactive, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { Odometer, EditPen, Collection, Setting } from '@element-plus/icons-vue'
+import { Odometer, EditPen, Collection, Setting, Plus } from '@element-plus/icons-vue' // 引入 Plus 图标
 import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 import * as echarts from 'echarts'
@@ -158,7 +169,6 @@ import * as echarts from 'echarts'
 const router = useRouter()
 const user = ref(JSON.parse(localStorage.getItem('user') || '{}'))
 const activeMenu = ref('dashboard')
-// 默认显示“我的点赞”
 const activeTab = ref('likes')
 
 // 数据源
@@ -166,71 +176,57 @@ const myBlogs = ref([])
 const collectList = ref([])
 const toReadList = ref([])
 const historyList = ref([])
-// ✨✨ 新增：点赞列表数据源
 const likedList = ref([])
 
+// 表单数据，包含 avatar
 const userForm = reactive({ ...user.value, password: '' })
 const totalDuration = ref(0)
 
-// 切换菜单
 const handleSelect = async (index) => {
   activeMenu.value = index
   if (index === 'dashboard') {
-    await fetchAllData() // 刷新数据以便统计
-    initCharts() // 然后再画图
+    await fetchAllData()
+    initCharts()
   }
 }
 
-// ✨✨ 核心：加载所有数据 ✨✨
 const fetchAllData = async () => {
   if (!user.value.id) return
-
   try {
-    // 1. 获取我的文章
     const allRes = await axios.get('http://localhost:8080/api/blog/all')
     myBlogs.value = allRes.data.filter(b => b.author === user.value.nickname || b.author === user.value.username)
-
-    // 2. 获取收藏列表 (Type=1)
+    
     const collectRes = await axios.get('http://localhost:8080/api/action/list', { params: { userId: user.value.id, type: 1 } })
     collectList.value = collectRes.data
 
-    // 3. 获取待读列表 (Type=2)
     const toReadRes = await axios.get('http://localhost:8080/api/action/list', { params: { userId: user.value.id, type: 2 } })
     toReadList.value = toReadRes.data
 
-    // 4. 获取历史记录
     const historyRes = await axios.get('http://localhost:8080/api/blog/history', { params: { userId: user.value.id } })
     historyList.value = historyRes.data
     
-    // 5. 获取真实学习时长
     const statsRes = await axios.get('http://localhost:8080/api/user/stats', { params: { userId: user.value.id } })
     totalDuration.value = statsRes.data || 0
 
-    // ✨✨ 6. 新增：获取我的点赞列表 ✨✨
     const likeRes = await axios.get('http://localhost:8080/api/blog/my-likes', { params: { userId: user.value.id } })
     likedList.value = likeRes.data
-
   } catch (e) {
-    console.error('加载个人数据失败', e)
+    console.error('加载数据失败', e)
   }
 }
 
-// 移除收藏/待读
 const removeAction = async (blogId, type) => {
   await axios.post(`http://localhost:8080/api/action/toggle?blogId=${blogId}&userId=${user.value.id}&type=${type}`)
   ElMessage.success('已移除')
-  fetchAllData() // 刷新列表
+  fetchAllData()
 }
 
-// ✨✨ 新增：取消点赞逻辑 ✨✨
 const handleCancelLike = async (blogId) => {
-  // 调用点赞接口（再次调用即取消）
   await axios.post(`http://localhost:8080/api/blog/like?blogId=${blogId}&userId=${user.value.id}`)
   ElMessage.success('已取消点赞')
-  fetchAllData() // 刷新列表
+  fetchAllData()
 }
 
-// 删除我的文章
 const handleDelete = async (id) => {
   ElMessageBox.confirm('确认删除？').then(async () => {
     await axios.delete(`http://localhost:8080/api/blog/delete/${id}`)
@@ -239,7 +235,7 @@ const handleDelete = async (id) => {
   })
 }
 
-// 修改资料
+// ✨✨ 修改资料逻辑 (包含头像) ✨✨
 const updateUser = async () => {
   try {
     await axios.put('http://localhost:8080/api/user/update', userForm)
@@ -247,8 +243,9 @@ const updateUser = async () => {
       ElMessage.success('密码修改成功，请重新登录')
       handleLogout()
     } else {
-      ElMessage.success('保存成功')
-      user.value.nickname = userForm.nickname
+      ElMessage.success('资料保存成功')
+      // 更新本地存储的用户信息 (包括新头像)
+      user.value = { ...user.value, nickname: userForm.nickname, avatar: userForm.avatar }
       localStorage.setItem('user', JSON.stringify(user.value))
     }
   } catch (e) { ElMessage.error('修改失败') }
@@ -256,7 +253,6 @@ const updateUser = async () => {
 
 const handleLogout = () => { localStorage.removeItem('user'); router.push('/login') }
 
-// 初始化图表
 const initCharts = async () => {
   await nextTick()
   const chartDom = document.getElementById('radarChart')

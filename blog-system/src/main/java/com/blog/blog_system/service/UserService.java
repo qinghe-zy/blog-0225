@@ -2,10 +2,11 @@ package com.blog.blog_system.service;
 
 import com.blog.blog_system.entity.User;
 import com.blog.blog_system.mapper.UserMapper;
-import com.blog.blog_system.mapper.VisitLogMapper; // ✨ 引入 VisitLogMapper
+import com.blog.blog_system.mapper.VisitLogMapper;
+import com.blog.blog_system.utils.MD5Util; // ✨ 引入 MD5 工具
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import java.util.*; // ✨ 引入集合工具类
+import java.util.*;
 
 /**
  * 用户业务逻辑层
@@ -17,7 +18,7 @@ public class UserService {
     private UserMapper userMapper;
 
     @Autowired
-    private VisitLogMapper visitLogMapper; // ✨ 注入 VisitLogMapper
+    private VisitLogMapper visitLogMapper;
 
     /**
      * 注册逻辑
@@ -27,34 +28,42 @@ public class UserService {
         if (existUser != null) {
             return "注册失败：用户名已被占用！";
         }
+
+        // ✨✨ 安全升级：密码加密存储
+        user.setPassword(MD5Util.encrypt(user.getPassword()));
+
+        // ✨✨ 个性化：如果没传头像，设置为空字符串 (防止数据库报错)
+        if (user.getAvatar() == null) {
+            user.setAvatar("");
+        }
+
         userMapper.insert(user);
         return "注册成功！";
     }
 
     /**
-     * 登录逻辑 (新增加的部分)
+     * 登录逻辑 (Service 层保留方法，虽然 Controller 目前直接用了 Mapper，保持逻辑一致性)
      */
     public String login(User user) {
-        // 1. 先根据用户名去数据库查有没有这个人
         User existUser = userMapper.findByUsername(user.getUsername());
 
-        // 2. 如果没查到，说明没注册过
         if (existUser == null) {
             return "登录失败：用户不存在！";
         }
 
-        // 3. 如果查到了，比对密码对不对（目前是明文比对，后续我们可以升级为加密）
-        if (!existUser.getPassword().equals(user.getPassword())) {
+        // ✨✨ 安全升级：将输入的密码加密后，再与数据库比对
+        String inputMd5 = MD5Util.encrypt(user.getPassword());
+
+        if (!existUser.getPassword().equals(inputMd5)) {
             return "登录失败：密码错误！";
         }
 
-        // 4. 全部校验通过
         return "登录成功！";
     }
 
     /**
      * ✨✨✨ 新增：生成用户画像数据 (雷达图) ✨✨✨
-     * @return Map<String, Object> 包含雷达图需要的 indicator(维度) 和 data(数值)
+     * (保持你的原代码不变)
      */
     public Map<String, Object> getUserRadar(Long userId) {
         // 1. 查出所有标签记录
