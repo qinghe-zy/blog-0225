@@ -8,7 +8,9 @@
         <div class="header-right">
           <el-dropdown>
             <div class="user-info-cursor">
-              <el-avatar class="user-avatar">{{ (currentUser.nickname || currentUser.username || '匿').charAt(0) }}</el-avatar>
+              <el-avatar v-if="currentUser.avatar" class="user-avatar" :src="currentUser.avatar"></el-avatar>
+              <el-avatar v-else class="user-avatar">{{ (currentUser.nickname || currentUser.username || '匿').charAt(0) }}</el-avatar>
+              
               <span class="username-text">{{ currentUser.nickname || currentUser.username }}</span>
               <el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </div>
