@@ -130,4 +130,9 @@ public class BlogController {
         visitLogMapper.updateDuration(userId, blogId, seconds);
         return "记录成功";
     }
+    //相关推荐接口
+    @GetMapping("/related/{id}")
+    public List<Blog> related(@PathVariable Long id) {
+        return blogService.getRelatedBlogs(id);
+    }
 }

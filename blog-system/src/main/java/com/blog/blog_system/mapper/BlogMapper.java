@@ -69,9 +69,7 @@ public interface BlogMapper {
     @Select("SELECT * FROM blog ORDER BY views DESC LIMIT 5")
     List<Blog> findHotBlogs();
 
-    // ✨✨✨ 重点修复：最近浏览 SQL ✨✨✨
-    // 原来的 DISTINCT 写法在严格模式下会报错。
-    // 改用 GROUP BY b.id，并取 MAX(create_time) 来排序，确保逻辑正确且兼容性好。
+    // 最近浏览
     @Select("SELECT b.* FROM blog b " +
             "JOIN visit_log v ON b.id = v.blog_id " +
             "WHERE v.user_id = #{userId} " +
@@ -84,4 +82,11 @@ public interface BlogMapper {
 
     @Update("UPDATE blog SET collects = collects - 1 WHERE id = #{id}")
     void decrementCollects(Long id);
+
+    // 新增：相关推荐查询
+    // 逻辑：查找包含指定标签(keyword)的文章，排除当前这篇(id)，按阅读量排序取前5
+    @Select("SELECT * FROM blog WHERE id != #{id} " +
+            "AND tags LIKE CONCAT('%', #{keyword}, '%') " +
+            "ORDER BY views DESC LIMIT 5")
+    List<Blog> findRelatedBlogs(@Param("id") Long id, @Param("keyword") String keyword);
 }

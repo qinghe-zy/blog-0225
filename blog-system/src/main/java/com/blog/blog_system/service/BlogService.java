@@ -2,10 +2,11 @@ package com.blog.blog_system.service;
 
 import com.blog.blog_system.entity.Blog;
 import com.blog.blog_system.mapper.BlogMapper;
-import com.blog.blog_system.mapper.VisitLogMapper; // 引入新 Mapper
+import com.blog.blog_system.mapper.VisitLogMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.util.List;
+import java.util.Collections;
 
 @Service
 public class BlogService {
@@ -13,7 +14,6 @@ public class BlogService {
     @Autowired
     private BlogMapper blogMapper;
 
-    // ✨ 注入埋点工具，用于记录浏览历史
     @Autowired
     private VisitLogMapper visitLogMapper;
 
@@ -21,21 +21,16 @@ public class BlogService {
         return blogMapper.findAll();
     }
 
-    // 升级版的发布逻辑
     public String saveBlog(Blog blog) {
-        // 模拟 AI：如果用户没填摘要，自动截取正文前 50 字
         if (blog.getSummary() == null || blog.getSummary().isEmpty()) {
             String content = blog.getContent();
-            // 简单的截取逻辑，防止正文太短报错
             String autoSummary = content.length() > 50 ? content.substring(0, 50) + "..." : content;
             blog.setSummary(autoSummary);
         }
-
         blogMapper.insert(blog);
         return "发布成功！";
     }
 
-    // 搜索博客的业务逻辑
     public List<Blog> searchBlogs(String keyword) {
         return blogMapper.search(keyword);
     }
@@ -49,34 +44,53 @@ public class BlogService {
         blogMapper.deleteById(id);
     }
 
-    /**
-     * ✨ 升级版详情逻辑：看一次+1，并且记录是谁看的
-     * @param id 博客ID
-     * @param userId 用户ID (可能为null，代表游客)
-     */
     public Blog getBlogDetail(Long id, Long userId) {
-        blogMapper.incrementViews(id); // 浏览量+1 (旧逻辑)
-
-        // ✨ 新增：如果是登录用户 (userId不为空)，记录浏览足迹
+        blogMapper.incrementViews(id);
         if (userId != null) {
             try {
                 visitLogMapper.insert(userId, id);
             } catch (Exception e) {
-                // 捕获异常防止日志系统挂了影响用户看文章
                 System.err.println("记录浏览历史失败: " + e.getMessage());
             }
         }
-
-        return blogMapper.findById(id); // 再查出来
+        return blogMapper.findById(id);
     }
 
-    // 新接口：获取热门榜单
     public List<Blog> getHotBlogs() {
         return blogMapper.findHotBlogs();
     }
 
-    // 新接口：获取某人的浏览历史
     public List<Blog> getRecentBlogs(Long userId) {
         return blogMapper.findRecentBlogs(userId);
+    }
+
+    /**
+     * ✨✨✨ 新增：获取相关推荐逻辑 ✨✨✨
+     * 策略：
+     * 1. 提取当前文章的第一个标签作为核心关键词。
+     * 2. 去数据库搜同标签的文章。
+     * 3. 如果没标签或没搜到，降级为推荐热门文章（兜底策略）。
+     */
+    public List<Blog> getRelatedBlogs(Long id) {
+        Blog currentBlog = blogMapper.findById(id);
+
+        // 防御性编程：如果文章不存在或没有标签，直接返回热门
+        if (currentBlog == null || currentBlog.getTags() == null || currentBlog.getTags().trim().isEmpty()) {
+            return blogMapper.findHotBlogs();
+        }
+
+        // 提取第一个标签 (支持中文或英文逗号)
+        String[] tags = currentBlog.getTags().split("[,，]");
+        String firstTag = tags[0].trim();
+
+        // 查询相关
+        List<Blog> related = blogMapper.findRelatedBlogs(id, firstTag);
+
+        // 防御性编程：如果也没搜到相关文章，还是返回热门，保证前端不空
+        if (related == null || related.isEmpty()) {
+            return blogMapper.findHotBlogs();
+        }
+
+        return related;
     }
 }

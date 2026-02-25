@@ -46,6 +46,20 @@
 
       <el-divider></el-divider>
 
+      <div v-if="relatedBlogs.length > 0" style="margin-bottom: 30px;">
+        <h3 style="margin-bottom: 15px;">📚 猜你喜欢 (相关推荐)</h3>
+        <el-row :gutter="15">
+          <el-col :span="8" v-for="item in relatedBlogs" :key="item.id">
+            <el-card shadow="hover" :body-style="{ padding: '10px' }" style="cursor: pointer;" @click="toRelated(item.id)">
+              <div style="font-weight: bold; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">{{ item.title }}</div>
+              <div style="font-size: 12px; color: #999; margin-top: 5px;">
+                🔥 {{ item.views }} 阅读 · 🏷️ {{ item.tags }}
+              </div>
+            </el-card>
+          </el-col>
+        </el-row>
+      </div>
+
       <div class="comment-section">
         <h3>💬 评论区</h3>
         
@@ -113,14 +127,17 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onBeforeUnmount, computed } from 'vue'
-import { useRoute } from 'vue-router'
+// ✨ 1. 引入 onBeforeUnmount
+import { ref, reactive, onMounted, onBeforeUnmount, computed, watch } from 'vue' // 引入 watch
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
 import MarkdownIt from 'markdown-it'
+// 引入图标
 import { Star, StarFilled, CollectionTag, Timer, CircleClose } from '@element-plus/icons-vue'
 
 const route = useRoute()
+const router = useRouter()
 const md = new MarkdownIt()
 const blog = ref({}) 
 const comments = ref([]) 
@@ -128,6 +145,10 @@ const newComment = ref('')
 const userStore = localStorage.getItem('user')
 const currentUser = userStore ? JSON.parse(userStore) : null
 
+// 相关推荐数据
+const relatedBlogs = ref([])
+
+// ✨ 2. 记录进入页面的时间
 let enterTime = Date.now()
 
 // 状态管理
@@ -138,42 +159,61 @@ const status = reactive({
   isBlocked: false
 })
 
+// 计算属性：是否是作者本人
 const isAuthor = computed(() => {
   if (!currentUser || !blog.value.author) return false
   return currentUser.username === blog.value.author || currentUser.nickname === blog.value.author
 })
 
-// ✨ 修改点4：使用 navigator.sendBeacon 上报时长
+// ✨ 3. 核心：页面销毁/跳转时上报阅读时长
 onBeforeUnmount(() => {
+  // 如果没登录，或者博客还没加载出来，就不记录
   if (!currentUser || !blog.value.id) return
 
   const leaveTime = Date.now()
+  // 计算停留时长 (秒)
   const duration = Math.floor((leaveTime - enterTime) / 1000)
 
+  // 只有阅读超过 2 秒才视为有效阅读，避免误点
   if (duration > 2) {
+    // 使用 FormData 发送数据，对应后端的 @RequestParam
     const formData = new FormData()
     formData.append('userId', currentUser.id)
     formData.append('blogId', blog.value.id)
     formData.append('seconds', duration)
 
-    // sendBeacon 不会因为页面关闭而中断
+    // 发送请求 (使用 sendBeacon 确保页面关闭也能发送)
     navigator.sendBeacon('http://localhost:8080/api/blog/duration', formData)
   }
 })
 
-onMounted(async () => {
-  await loadDetail()
-  loadComments()
-  if (currentUser) {
-    checkAllStatus(route.params.id)
+// 监听路由变化，解决点击推荐后不刷新的问题
+watch(() => route.params.id, (newId) => {
+  if (newId) {
+    enterTime = Date.now() 
+    initPage(newId)
+    window.scrollTo(0, 0)
   }
 })
 
+// 1. 统一的加载入口 (修复重复调用问题)
+const initPage = async (id) => {
+  await loadDetail(id)
+  loadComments(id)
+  loadRelated(id) // 加载推荐
+  if (currentUser) {
+    checkAllStatus(id)
+  }
+}
+
+onMounted(() => {
+  initPage(route.params.id)
+})
+
 // 加载详情
-const loadDetail = async () => {
-  const blogId = route.params.id
+const loadDetail = async (id) => {
   try {
-    const res = await axios.get(`http://localhost:8080/api/blog/detail/${blogId}`, {
+    const res = await axios.get(`http://localhost:8080/api/blog/detail/${id}`, {
       params: { userId: currentUser ? currentUser.id : null }
     })
     blog.value = res.data
@@ -182,13 +222,30 @@ const loadDetail = async () => {
   }
 }
 
+// 加载相关推荐
+const loadRelated = async (id) => {
+  try {
+    const res = await axios.get(`http://localhost:8080/api/blog/related/${id}`)
+    relatedBlogs.value = res.data
+  } catch (e) {
+    console.error('加载推荐失败', e)
+  }
+}
+
+// 跳转到推荐文章
+const toRelated = (id) => {
+  router.push(`/blog/${id}`)
+}
+
 // 检查交互状态
 const checkAllStatus = async (blogId) => {
   const userId = currentUser.id
   
+  // 点赞
   const likeRes = await axios.get('http://localhost:8080/api/blog/checkLike', { params: { blogId, userId } })
   isLiked.value = likeRes.data
 
+  // 收藏/待读/拉黑
   const s1 = await axios.get('http://localhost:8080/api/action/check', { params: { blogId, userId, type: 1 } })
   status.isCollected = s1.data
   
@@ -215,6 +272,7 @@ const handleLike = async () => {
   }
 }
 
+// 通用动作逻辑 (收藏、待读、拉黑)
 const toggleAction = async (type) => {
   if (!currentUser) return ElMessage.warning('请先登录')
   
@@ -239,8 +297,9 @@ const toggleAction = async (type) => {
   }
 }
 
-const loadComments = async () => {
-  const res = await axios.get(`http://localhost:8080/api/comment/list/${route.params.id}`)
+// 评论逻辑
+const loadComments = async (id) => {
+  const res = await axios.get(`http://localhost:8080/api/comment/list/${id}`)
   comments.value = res.data
 }
 
@@ -256,10 +315,10 @@ const submitComment = async () => {
   })
   ElMessage.success('评论成功')
   newComment.value = ''
-  loadComments()
+  loadComments(route.params.id)
 }
 
-// ✨ 修改点5：编辑逻辑适配标签数组
+// 编辑逻辑
 const editDialogVisible = ref(false)
 const editForm = reactive({
   title: '',
@@ -294,7 +353,7 @@ const submitEdit = async () => {
   if (res.data === '修改成功！') {
     ElMessage.success('修改成功')
     editDialogVisible.value = false
-    loadDetail() 
+    loadDetail(route.params.id) // 刷新详情
   }
 }
 </script>
