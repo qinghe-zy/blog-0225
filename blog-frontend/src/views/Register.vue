@@ -3,7 +3,6 @@
     <el-card class="box-card">
       <h2 style="text-align: center; margin-bottom: 20px;">欢迎注册</h2>
       <el-form :model="form" label-width="80px">
-        
         <el-form-item label="头像">
           <el-upload
             class="avatar-uploader"
@@ -50,12 +49,10 @@ import { reactive, ref } from 'vue'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
-import { Plus } from '@element-plus/icons-vue' // 引入图标
+import { Plus } from '@element-plus/icons-vue'
 
 const router = useRouter()
-// 增加 avatar 字段
 const form = reactive({ username: '', password: '', email: '', avatar: '' })
-// 增加确认密码变量
 const confirmPassword = ref('')
 
 const handleAvatarSuccess = (res) => {
@@ -65,28 +62,25 @@ const handleAvatarSuccess = (res) => {
 
 const handleRegister = async () => {
   if (!form.username || !form.password) return ElMessage.warning('请填写完整！')
-  
-  //校验密码一致性
-  if (form.password !== confirmPassword.value) {
-    return ElMessage.warning('两次输入的密码不一致！')
-  }
+  if (form.password !== confirmPassword.value) return ElMessage.warning('两次输入的密码不一致！')
 
   try {
     const res = await axios.post('http://localhost:8080/api/user/register', form)
-    if (res.data === '注册成功！') {
+    
+    // ✨✨ 适配 Result 结构
+    if (res.data.code === 200) {
       ElMessage.success('注册成功，快去登录吧！')
       router.push('/login')
     } else {
-      ElMessage.warning(res.data)
+      ElMessage.warning(res.data.msg)
     }
   } catch (e) {
-    ElMessage.error('网络错误，请检查后端是否启动')
+    ElMessage.error('网络错误')
   }
 }
 </script>
 
 <style scoped>
-/* 严格保留你原有的样式 */
 .app-container { display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f3f4f6;}
 .box-card { width: 400px; padding: 20px; border-radius: 10px; }
 </style>

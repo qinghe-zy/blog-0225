@@ -159,7 +159,7 @@
               <el-upload 
                 action="http://localhost:8080/api/upload" 
                 :show-file-list="false" 
-                :on-success="(res)=>{blogForm.url=res;ElMessage.success('封面上传成功')}" 
+                :on-success="handleUploadSuccess" 
                 class="avatar-uploader"
               >
                 <img v-if="blogForm.url" :src="blogForm.url" class="avatar"/>
@@ -169,6 +169,15 @@
             
             <el-form-item label="文章正文">
               <el-input type="textarea" :rows="8" v-model="blogForm.content" placeholder="支持 Markdown 语法..."></el-input>
+              <div style="margin-top: 10px;">
+                <el-button type="warning" plain size="small" @click="handleAIAnalyze" :loading="aiLoading">
+                  ✨ DeepSeek 一键生成摘要与标签
+                </el-button>
+              </div>
+            </el-form-item>
+
+            <el-form-item label="智能摘要">
+              <el-input type="textarea" :rows="2" v-model="blogForm.summary" placeholder="AI生成或手动输入"></el-input>
             </el-form-item>
         </el-form>
         <template #footer>
@@ -192,6 +201,7 @@ const currentMenu = ref('1')
 const searchKeyword = ref('')
 const dialogVisible = ref(false)
 const isSubmitting = ref(false)
+const aiLoading = ref(false) // AI 加载状态
 
 const userStore = localStorage.getItem('user')
 const currentUser = ref(userStore ? JSON.parse(userStore) : {})
@@ -202,39 +212,104 @@ const blogForm = reactive({
   title: '', 
   tags: [], 
   content: '', 
+  summary: '', // 新增摘要字段
   author: currentUser.value.nickname || currentUser.value.username, 
   url: '' 
 })
 
-// 权限判断
+/**
+ * 处理文件上传回调
+ * 适配后端 Result 统一响应结构
+ */
+const handleUploadSuccess = (res) => {
+  if (res.code === 200) {
+    blogForm.url = res.data
+    ElMessage.success('封面上传成功')
+  } else {
+    ElMessage.error(res.msg || '上传失败')
+  }
+}
+
+/**
+ * AI 辅助生成摘要和标签
+ * 调用 DeepSeek 接口
+ */
+const handleAIAnalyze = async () => {
+  if (!blogForm.content || blogForm.content.length < 10) {
+    return ElMessage.warning('请先输入足够的内容供 AI 分析')
+  }
+  
+  aiLoading.value = true
+  try {
+    const res = await axios.post('http://localhost:8080/api/ai/analyze', { 
+      content: blogForm.content 
+    })
+    
+    if (res.data.code === 200) {
+      const data = res.data.data
+      
+      // 1. 回填摘要
+      blogForm.summary = data.summary
+      
+      // 2. 回填标签 (合并去重)
+      if (data.tags) {
+        const aiTags = data.tags.split(/[,，]/).map(t => t.trim())
+        const newTags = new Set([...blogForm.tags, ...aiTags])
+        blogForm.tags = Array.from(newTags)
+      }
+      
+      ElMessage.success('DeepSeek 分析完成！')
+    } else {
+      ElMessage.error(res.data.msg || 'AI 分析失败')
+    }
+  } catch (e) {
+    ElMessage.error('网络请求错误')
+  } finally {
+    aiLoading.value = false
+  }
+}
+
+/**
+ * 权限判断：是否可以删除博客
+ * 仅允许作者本人操作
+ */
 const canDelete = (blog) => {
   if (!currentUser.value.username) return false
   return currentUser.value.username === blog.author || currentUser.value.nickname === blog.author
 }
 
+/**
+ * 加载全部博客
+ */
 const loadBlogs = async () => { 
   try {
     const res = await axios.get('http://localhost:8080/api/blog/all')
-    blogList.value = res.data
-    listTitle.value = '全部文章'
-    currentMenu.value = '1'
-  } catch (e) {
-    ElMessage.error('获取文章列表失败')
-  }
+    if (res.data.code === 200) {
+      blogList.value = res.data.data
+      listTitle.value = '全部文章'
+      currentMenu.value = '1'
+    }
+  } catch (e) { ElMessage.error('获取列表失败') }
 }
 
+/**
+ * 加载热门博客
+ */
 const loadHotBlogs = async () => { 
   try {
     const res = await axios.get('http://localhost:8080/api/blog/hot')
-    blogList.value = res.data
-    listTitle.value = '全站热门榜单'
-    currentMenu.value = '2' 
-  } catch (e) {
-    ElMessage.error('获取热门失败')
-  }
+    if (res.data.code === 200) {
+      blogList.value = res.data.data
+      listTitle.value = '全站热门榜单'
+      currentMenu.value = '2' 
+    }
+  } catch (e) { ElMessage.error('获取热门失败') }
 }
 
-// ✨✨✨ 智能推荐入口 ✨✨✨
+/**
+ * 加载个性化推荐
+ * 需登录后才能使用
+ */
 const loadRecommend = async () => {
   if (!currentUser.value.id) {
     ElMessage.warning('请登录后查看个性化推荐')
@@ -242,33 +317,39 @@ const loadRecommend = async () => {
   }
   try {
     const res = await axios.get(`http://localhost:8080/api/blog/recommend?userId=${currentUser.value.id}`)
-    blogList.value = res.data
-    listTitle.value = '猜你喜欢 (基于您的阅读兴趣)'
-    currentMenu.value = '3'
-  } catch (e) {
-    ElMessage.error('获取推荐数据失败')
-  }
+    if (res.data.code === 200) {
+      blogList.value = res.data.data
+      listTitle.value = '猜你喜欢 (基于您的阅读兴趣)'
+      currentMenu.value = '3'
+    }
+  } catch (e) { ElMessage.error('获取推荐数据失败') }
 }
 
+/**
+ * 搜索功能
+ */
 const handleSearch = async () => { 
   if(!searchKeyword.value) return loadBlogs()
   try {
     const res = await axios.get('http://localhost:8080/api/blog/search', { params: { keyword: searchKeyword.value } })
-    blogList.value = res.data
-    listTitle.value = `搜索结果: "${searchKeyword.value}"`
-  } catch (e) {
-    ElMessage.error('搜索失败')
-  }
+    if (res.data.code === 200) {
+      blogList.value = res.data.data
+      listTitle.value = `搜索结果: "${searchKeyword.value}"`
+    }
+  } catch (e) { ElMessage.error('搜索失败') }
 }
 
+/**
+ * 提交发布文章
+ */
 const submitBlog = async () => {
   if (!blogForm.title || !blogForm.content) return ElMessage.warning('标题和正文不能为空')
   if (blogForm.tags.length === 0) return ElMessage.warning('请至少输入一个标签') 
 
   isSubmitting.value = true
-  
+  // 取第一个标签作为主分类
   const derivedCategory = blogForm.tags[0]
-
+  
   const submitData = { 
     ...blogForm, 
     category: derivedCategory, 
@@ -277,36 +358,45 @@ const submitBlog = async () => {
   }
 
   try { 
-    await axios.post('http://localhost:8080/api/blog/add', submitData)
-    ElMessage.success('发布成功！')
-    dialogVisible.value = false
-    loadBlogs()
-    // 重置表单
-    blogForm.title = ''
-    blogForm.content = ''
-    blogForm.url = ''
-    blogForm.tags = []
+    const res = await axios.post('http://localhost:8080/api/blog/add', submitData)
+    if (res.data.code === 200) {
+      ElMessage.success('发布成功！')
+      dialogVisible.value = false
+      loadBlogs()
+      // 重置表单
+      blogForm.title = ''
+      blogForm.content = ''
+      blogForm.url = ''
+      blogForm.summary = ''
+      blogForm.tags = []
+    } else {
+      ElMessage.error(res.data.msg)
+    }
   } catch(e) {
-    ElMessage.error('发布失败，请检查网络')
+    ElMessage.error('发布失败')
   } finally {
     isSubmitting.value = false
   } 
 }
 
-const toDetail = (id) => {
-  if (!id) return
-  router.push(`/blog/${id}`)
-}
+const toDetail = (id) => { if (id) router.push(`/blog/${id}`) }
 
+/**
+ * 删除文章操作
+ */
 const handleDelete = (id) => { 
   ElMessageBox.confirm('确定要删除这篇文章吗？此操作不可恢复。', '警告', {
     confirmButtonText: '确定删除',
     cancelButtonText: '取消',
     type: 'warning'
   }).then(async()=>{
-    await axios.delete(`http://localhost:8080/api/blog/delete/${id}`)
-    loadBlogs()
-    ElMessage.success('已删除')
+    const res = await axios.delete(`http://localhost:8080/api/blog/delete/${id}`)
+    if (res.data.code === 200) {
+      loadBlogs()
+      ElMessage.success('已删除')
+    } else {
+      ElMessage.error(res.data.msg)
+    }
   }) 
 }
 
@@ -316,9 +406,7 @@ const handleLogout = () => {
   ElMessage.success('已安全退出')
 }
 
-onMounted(() => {
-  loadBlogs()
-})
+onMounted(() => { loadBlogs() })
 </script>
 
 <style scoped>
@@ -358,7 +446,7 @@ onMounted(() => {
 .blog-footer { margin-top: auto; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #999; border-top: 1px solid #f0f0f0; padding-top: 10px; }
 .footer-stats { display: flex; align-items: center; }
 
-/* 上传样式 */
+/* 上传组件样式 */
 .avatar-uploader { border: 1px dashed #d9d9d9; border-radius: 6px; cursor: pointer; position: relative; overflow: hidden; width: 100px; height: 100px; display: flex; justify-content: center; align-items: center; transition: 0.2s; }
 .avatar-uploader:hover { border-color: #409EFF; }
 .avatar-uploader-icon { font-size: 28px; color: #8c939d; }

@@ -17,6 +17,11 @@
           <el-menu-item index="dashboard">
             <el-icon><Odometer /></el-icon><span>📊 数据概览</span>
           </el-menu-item>
+          <el-menu-item index="notification">
+            <el-icon><Bell /></el-icon>
+            <span>🔔 消息中心</span>
+            <el-tag v-if="unreadCount > 0" type="danger" size="small" round style="margin-left: 10px;">{{ unreadCount }}</el-tag>
+          </el-menu-item>
           <el-menu-item index="bookshelf">
             <el-icon><Collection /></el-icon><span>📚 我的书架</span>
           </el-menu-item>
@@ -48,6 +53,31 @@
             <div slot="header"><b>📈 您的阅读偏好 (技术雷达)</b></div>
             <div id="radarChart" style="width: 100%; height: 400px;"></div>
           </el-card>
+        </div>
+
+        <div v-if="activeMenu === 'notification'">
+          <div style="margin-bottom: 20px; display: flex; justify-content: space-between;">
+             <h3>🔔 我的消息</h3>
+             <el-button type="primary" link @click="markAllRead">全部已读</el-button>
+          </div>
+          <el-card v-for="note in notificationList" :key="note.id" style="margin-bottom: 10px;" shadow="hover">
+             <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                   <el-badge is-dot :hidden="note.isRead === 1" class="item">
+                      <el-icon size="20" color="#409eff" v-if="note.type===1"><StarFilled /></el-icon>
+                      <el-icon size="20" color="#67c23a" v-if="note.type===2"><Comment /></el-icon>
+                   </el-badge>
+                   <div>
+                      <span style="font-weight: bold;">{{ note.senderName }}</span> 
+                      <span style="color: #666; margin: 0 5px;">{{ note.type===1 ? '点赞了' : '评论了' }}</span>
+                      <el-link type="primary" @click="$router.push(`/blog/${note.relatedId}`)">查看详情</el-link>
+                      <div style="font-size: 12px; color: #999; margin-top: 5px;">{{ note.content }}</div>
+                   </div>
+                </div>
+                <div style="color: #ccc; font-size: 12px;">{{ note.createTime }}</div>
+             </div>
+          </el-card>
+          <el-empty v-if="notificationList.length===0" description="暂无新消息"></el-empty>
         </div>
 
         <div v-if="activeMenu === 'bookshelf'">
@@ -100,6 +130,22 @@
                </el-table>
             </el-tab-pane>
 
+            <el-tab-pane label="🚫 黑名单" name="blocked">
+               <el-table :data="blockedList" style="width: 100%" empty-text="黑名单为空">
+                 <el-table-column prop="title" label="标题">
+                   <template #default="scope">
+                     <span style="color: #999;">{{ scope.row.title }}</span>
+                   </template>
+                 </el-table-column>
+                 <el-table-column prop="author" label="作者" width="120"></el-table-column>
+                 <el-table-column label="操作" width="120">
+                   <template #default="scope">
+                     <el-button size="small" type="warning" link @click="removeAction(scope.row.id, 3)">移出黑名单</el-button>
+                   </template>
+                 </el-table-column>
+               </el-table>
+            </el-tab-pane>
+
             <el-tab-pane label="🕒 浏览历史" name="history">
                <div v-for="blog in historyList" :key="blog.id" class="mini-item" @click="$router.push(`/blog/${blog.id}`)">
                  <span style="font-weight: bold;">{{ blog.title }}</span>
@@ -136,7 +182,7 @@
                  <el-upload 
                     action="http://localhost:8080/api/upload" 
                     :show-file-list="false" 
-                    :on-success="(res)=>{userForm.avatar=res; ElMessage.success('头像上传成功')}" 
+                    :on-success="handleUploadSuccess" 
                     style="border: 1px dashed #d9d9d9; width: 80px; height: 80px; border-radius: 50%; display: flex; justify-content: center; align-items: center; cursor: pointer; overflow: hidden;"
                   >
                     <img v-if="userForm.avatar" :src="userForm.avatar" style="width: 100%; height: 100%; object-fit: cover;"/>
@@ -161,7 +207,7 @@
 <script setup>
 import { ref, reactive, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { Odometer, EditPen, Collection, Setting, Plus } from '@element-plus/icons-vue' // 引入 Plus 图标
+import { Odometer, EditPen, Collection, Setting, Plus, Bell, StarFilled, Comment } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 import * as echarts from 'echarts'
@@ -171,14 +217,15 @@ const user = ref(JSON.parse(localStorage.getItem('user') || '{}'))
 const activeMenu = ref('dashboard')
 const activeTab = ref('likes')
 
-// 数据源
 const myBlogs = ref([])
 const collectList = ref([])
 const toReadList = ref([])
 const historyList = ref([])
 const likedList = ref([])
+const blockedList = ref([]) 
+const notificationList = ref([]) 
+const unreadCount = ref(0) 
 
-// 表单数据，包含 avatar
 const userForm = reactive({ ...user.value, password: '' })
 const totalDuration = ref(0)
 
@@ -187,6 +234,18 @@ const handleSelect = async (index) => {
   if (index === 'dashboard') {
     await fetchAllData()
     initCharts()
+  } else if (index === 'notification') {
+    await fetchNotifications()
+  }
+}
+
+// ✨✨✨ 修复：处理头像上传回调的 Result 包装 ✨✨✨
+const handleUploadSuccess = (res) => {
+  if (res.code === 200) {
+    userForm.avatar = res.data
+    ElMessage.success('头像上传成功')
+  } else {
+    ElMessage.error(res.msg || '上传失败')
   }
 }
 
@@ -194,25 +253,64 @@ const fetchAllData = async () => {
   if (!user.value.id) return
   try {
     const allRes = await axios.get('http://localhost:8080/api/blog/all')
-    myBlogs.value = allRes.data.filter(b => b.author === user.value.nickname || b.author === user.value.username)
+    // 兼容 List 和 Result
+    const blogs = allRes.data.code === 200 ? allRes.data.data : (Array.isArray(allRes.data) ? allRes.data : [])
+    myBlogs.value = blogs.filter(b => b.author === user.value.nickname || b.author === user.value.username)
     
-    const collectRes = await axios.get('http://localhost:8080/api/action/list', { params: { userId: user.value.id, type: 1 } })
-    collectList.value = collectRes.data
-
-    const toReadRes = await axios.get('http://localhost:8080/api/action/list', { params: { userId: user.value.id, type: 2 } })
-    toReadList.value = toReadRes.data
+    // Action 列表
+    const fetchAction = async (type) => {
+        const res = await axios.get('http://localhost:8080/api/action/list', { params: { userId: user.value.id, type } })
+        return res.data.code === 200 ? res.data.data : res.data
+    }
+    collectList.value = await fetchAction(1)
+    toReadList.value = await fetchAction(2)
+    blockedList.value = await fetchAction(3)
 
     const historyRes = await axios.get('http://localhost:8080/api/blog/history', { params: { userId: user.value.id } })
-    historyList.value = historyRes.data
+    historyList.value = historyRes.data.code === 200 ? historyRes.data.data : historyRes.data
     
-    const statsRes = await axios.get('http://localhost:8080/api/user/stats', { params: { userId: user.value.id } })
-    totalDuration.value = statsRes.data || 0
-
     const likeRes = await axios.get('http://localhost:8080/api/blog/my-likes', { params: { userId: user.value.id } })
-    likedList.value = likeRes.data
+    likedList.value = likeRes.data.code === 200 ? likeRes.data.data : likeRes.data
+    
+    // ✨✨✨ 修复：未读数适配 Result ✨✨✨
+    const countRes = await axios.get('http://localhost:8080/api/notification/count', { params: { userId: user.value.id } })
+    if (countRes.data.code === 200) {
+        unreadCount.value = countRes.data.data
+    } else {
+        unreadCount.value = countRes.data // 兼容旧接口
+    }
+
+    const statsRes = await axios.get('http://localhost:8080/api/user/stats', { params: { userId: user.value.id } })
+    if (statsRes.data.code === 200) {
+        totalDuration.value = statsRes.data.data || 0
+    }
+
   } catch (e) {
     console.error('加载数据失败', e)
   }
+}
+
+// ✨✨✨ 修复：通知列表适配 Result ✨✨✨
+const fetchNotifications = async () => {
+  try {
+    const res = await axios.get('http://localhost:8080/api/notification/list', { params: { userId: user.value.id } })
+    if (res.data.code === 200) {
+        notificationList.value = res.data.data
+    }
+    // 刷新未读数
+    const countRes = await axios.get('http://localhost:8080/api/notification/count', { params: { userId: user.value.id } })
+    if (countRes.data.code === 200) {
+        unreadCount.value = countRes.data.data
+    }
+  } catch(e) {
+    ElMessage.error('消息加载失败')
+  }
+}
+
+const markAllRead = async () => {
+  await axios.post('http://localhost:8080/api/notification/read-all?userId=' + user.value.id)
+  ElMessage.success('全部已读')
+  fetchNotifications()
 }
 
 const removeAction = async (blogId, type) => {
@@ -229,26 +327,31 @@ const handleCancelLike = async (blogId) => {
 
 const handleDelete = async (id) => {
   ElMessageBox.confirm('确认删除？').then(async () => {
-    await axios.delete(`http://localhost:8080/api/blog/delete/${id}`)
-    ElMessage.success('删除成功')
-    fetchAllData()
+    const res = await axios.delete(`http://localhost:8080/api/blog/delete/${id}`)
+    // 兼容
+    if (res.data.code === 200 || res.data === '删除成功') {
+        ElMessage.success('删除成功')
+        fetchAllData()
+    }
   })
 }
 
-// ✨✨ 修改资料逻辑 (包含头像) ✨✨
 const updateUser = async () => {
   try {
-    await axios.put('http://localhost:8080/api/user/update', userForm)
-    if (userForm.password) {
-      ElMessage.success('密码修改成功，请重新登录')
-      handleLogout()
+    const res = await axios.put('http://localhost:8080/api/user/update', userForm)
+    if (res.data.code === 200) {
+        if (userForm.password) {
+            ElMessage.success('密码修改成功，请重新登录')
+            handleLogout()
+        } else {
+            ElMessage.success('资料保存成功')
+            user.value = { ...user.value, nickname: userForm.nickname, avatar: userForm.avatar }
+            localStorage.setItem('user', JSON.stringify(user.value))
+        }
     } else {
-      ElMessage.success('资料保存成功')
-      // 更新本地存储的用户信息 (包括新头像)
-      user.value = { ...user.value, nickname: userForm.nickname, avatar: userForm.avatar }
-      localStorage.setItem('user', JSON.stringify(user.value))
+        ElMessage.error(res.data.msg || '修改失败')
     }
-  } catch (e) { ElMessage.error('修改失败') }
+  } catch (e) { ElMessage.error('网络错误') }
 }
 
 const handleLogout = () => { localStorage.removeItem('user'); router.push('/login') }
@@ -259,23 +362,28 @@ const initCharts = async () => {
   if (chartDom) {
     try {
       const res = await axios.get(`http://localhost:8080/api/user/radar?userId=${user.value.id}`)
-      const radarData = res.data
-
-      const myChart = echarts.init(chartDom)
-      myChart.setOption({
-        radar: {
-          indicator: radarData.indicators
-        },
-        series: [{
-          type: 'radar',
-          data: [
-            { 
-              value: radarData.values,
-              name: '阅读偏好' 
-            }
-          ]
-        }]
-      })
+      let radarData = {}
+      if (res.data.code === 200) {
+          radarData = res.data.data
+      }
+      
+      if (radarData.indicators) {
+          const myChart = echarts.init(chartDom)
+          myChart.setOption({
+            radar: {
+              indicator: radarData.indicators
+            },
+            series: [{
+              type: 'radar',
+              data: [
+                { 
+                  value: radarData.values,
+                  name: '阅读偏好' 
+                }
+              ]
+            }]
+          })
+      }
     } catch (e) {
       console.error('图表加载失败', e)
     }

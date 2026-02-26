@@ -2,13 +2,13 @@ package com.blog.blog_system.service;
 
 import com.blog.blog_system.entity.Blog;
 import com.blog.blog_system.entity.Comment;
-import com.blog.blog_system.mapper.BlogMapper;
-import com.blog.blog_system.mapper.CommentMapper;
-import com.blog.blog_system.mapper.VisitLogMapper;
+import com.blog.blog_system.entity.User; // ✨ 补充导入 User 实体
+import com.blog.blog_system.entity.Notification; // 引入 Notification
+import com.blog.blog_system.mapper.*; // 简化导入
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.blog.blog_system.mapper.CommentMapper;
+
 import java.util.*;
 
 @Service
@@ -23,6 +23,13 @@ public class BlogService {
     @Autowired
     private CommentMapper commentMapper;
 
+    @Autowired
+    private NotificationMapper notificationMapper; // 注入通知 Mapper
+
+    @Autowired
+    private UserMapper userMapper; // 注入 UserMapper 用于查询昵称
+
+    // 保留 getAllBlogs, saveBlog, searchBlogs 等基础 CRUD 方法
     public List<Blog> getAllBlogs() { return blogMapper.findAll(); }
 
     public String saveBlog(Blog blog) {
@@ -72,61 +79,73 @@ public class BlogService {
     }
 
     /**
-     * ✨✨✨ 升级：个性化推荐 + 热门兜底策略 ✨✨✨
-     * 解决“猜你喜欢”只显示一篇文章的问题
+     * ✨✨✨ 混合推荐引擎 v2.0 ✨✨✨
+     * 策略优先级：协同过滤 > 内容标签 > 全站热门
      */
     public List<Blog> getPersonalizedBlogs(Long userId) {
-        List<Blog> result = new ArrayList<>();
+        // 使用 LinkedHashMap 去重并保持插入顺序
+        Map<Long, Blog> recommendMap = new LinkedHashMap<>();
 
-        // 1. 获取三种行为的标签数据
-        List<String> viewedTags = visitLogMapper.selectViewedTags(userId);
-        List<String> likedTags = visitLogMapper.selectLikedTags(userId);
-        List<String> collectedTags = visitLogMapper.selectCollectedTags(userId);
-
-        // 2. 如果有行为数据，计算最高分标签
-        if (!viewedTags.isEmpty() || !likedTags.isEmpty() || !collectedTags.isEmpty()) {
-            Map<String, Integer> tagScores = new HashMap<>();
-            calculateScore(tagScores, viewedTags, 1);
-            calculateScore(tagScores, likedTags, 3);
-            calculateScore(tagScores, collectedTags, 5);
-
-            // 找出 Top 1 标签
-            String topTag = "";
-            int maxScore = 0;
-            for (Map.Entry<String, Integer> entry : tagScores.entrySet()) {
-                if (entry.getValue() > maxScore) {
-                    maxScore = entry.getValue();
-                    topTag = entry.getKey();
-                }
-            }
-
-            // 如果有 Top 标签，先查它
-            if (!topTag.isEmpty()) {
-                result = blogMapper.findBlogsByTag(topTag);
+        // 1. 【协同过滤】推荐 (User-Based CF)
+        // 逻辑：寻找口味相似用户喜欢的文章
+        List<Blog> cfBlogs = blogMapper.findCollaborativeBlogs(userId);
+        if (cfBlogs != null) {
+            for (Blog b : cfBlogs) {
+                recommendMap.put(b.getId(), b);
             }
         }
 
-        // 3. ✨✨ 兜底策略：如果推荐结果少于 5 篇，用热门文章补齐 ✨✨
-        if (result.size() < 5) {
-            List<Blog> hotBlogs = blogMapper.findHotBlogs();
-            for (Blog hot : hotBlogs) {
-                // 去重：如果结果里还没有这篇热门文章，就加进去
-                boolean exists = false;
-                for (Blog existing : result) {
-                    if (existing.getId().equals(hot.getId())) {
-                        exists = true;
-                        break;
+        // 2. 【内容画像】推荐 (Content-Based)
+        // 逻辑：如果协同过滤不够10篇，用标签画像补齐
+        if (recommendMap.size() < 10) {
+            List<String> viewedTags = visitLogMapper.selectViewedTags(userId);
+            List<String> likedTags = visitLogMapper.selectLikedTags(userId);
+            List<String> collectedTags = visitLogMapper.selectCollectedTags(userId);
+
+            if (!viewedTags.isEmpty() || !likedTags.isEmpty() || !collectedTags.isEmpty()) {
+                Map<String, Integer> tagScores = new HashMap<>();
+                calculateScore(tagScores, viewedTags, 1); // 阅读+1分
+                calculateScore(tagScores, likedTags, 3);  // 点赞+3分
+                calculateScore(tagScores, collectedTags, 5); // 收藏+5分
+
+                // 找出得分最高的标签
+                String topTag = "";
+                int maxScore = 0;
+                for (Map.Entry<String, Integer> entry : tagScores.entrySet()) {
+                    if (entry.getValue() > maxScore) {
+                        maxScore = entry.getValue();
+                        topTag = entry.getKey();
                     }
                 }
-                if (!exists) {
-                    result.add(hot);
+
+                if (!topTag.isEmpty()) {
+                    List<Blog> tagBlogs = blogMapper.findBlogsByTag(topTag);
+                    for (Blog b : tagBlogs) {
+                        if (!recommendMap.containsKey(b.getId())) {
+                            recommendMap.put(b.getId(), b);
+                        }
+                    }
                 }
             }
         }
 
-        return result;
+        // 3. 【热门兜底】推荐 (Hot Fallback)
+        // 逻辑：如果还不够10篇，用全站热门补齐
+        if (recommendMap.size() < 10) {
+            List<Blog> hotBlogs = blogMapper.findHotBlogs();
+            for (Blog b : hotBlogs) {
+                if (!recommendMap.containsKey(b.getId())) {
+                    recommendMap.put(b.getId(), b);
+                }
+            }
+        }
+
+        return new ArrayList<>(recommendMap.values());
     }
 
+    /**
+     * 辅助方法：计算标签得分
+     */
     private void calculateScore(Map<String, Integer> scores, List<String> tags, int weight) {
         if (tags == null) return;
         for (String tagStr : tags) {
@@ -140,6 +159,9 @@ public class BlogService {
         }
     }
 
+    /**
+     * ✨✨✨ 点赞逻辑 (已修复：增加消息通知) ✨✨✨
+     */
     @Transactional(rollbackFor = Exception.class)
     public String toggleLike(Long blogId, Long userId) {
         int count = blogMapper.checkIsLiked(userId, blogId);
@@ -147,6 +169,10 @@ public class BlogService {
             try {
                 blogMapper.addLike(userId, blogId);
                 blogMapper.incrementLikes(blogId);
+
+                // ✨ 触发通知：类型1=点赞
+                sendNotification(userId, blogId, 1, "点赞了你的文章");
+
                 return "点赞成功";
             } catch (Exception e) {
                 return "您已点赞";
@@ -158,7 +184,7 @@ public class BlogService {
         }
     }
 
-
+    // 辅助：更新平均分
     private void updateBlogAverageScore(Long blogId) {
         Double avgScore = commentMapper.calculateAvgScore(blogId);
         if (avgScore != null) {
@@ -166,47 +192,78 @@ public class BlogService {
             blogMapper.updateScore(blogId, formattedScore);
         }
     }
+
+    /**
+     * ✨✨✨ 评论逻辑 (已修复：增加消息通知) ✨✨✨
+     */
     @Transactional(rollbackFor = Exception.class)
     public String addComment(Comment comment) {
-        // A. 如果这次操作包含评分 (score > 0)
-        // 先把该用户之前在这篇文章下的所有评分重置为 0
-        // 这样计算平均分时，旧分数就不会被算进去了
+        // 1. 如果有评分，先清空旧分
         if (comment.getScore() != null && comment.getScore() > 0) {
             commentMapper.clearPreviousScores(comment.getUserId(), comment.getBlogId());
         }
 
-        // B. 插入新评论
+        // 2. 插入评论
         commentMapper.insert(comment);
 
-        // C. 只有当这次操作包含评分时，才重新计算平均分
-        // (如果只是纯文字回复，不需要重算，节省资源)
+        // 3. 更新文章平均分
         if (comment.getScore() != null && comment.getScore() > 0) {
             updateBlogAverageScore(comment.getBlogId());
         }
+
+        // ✨ 触发通知：类型2=评论
+        String msg = (comment.getContent() == null || comment.getContent().isEmpty())
+                ? "给你的文章打了分"
+                : "评论: " + comment.getContent();
+        // 截取过长内容
+        if (msg.length() > 20) msg = msg.substring(0, 20) + "...";
+
+        sendNotification(comment.getUserId(), comment.getBlogId(), 2, msg);
+
         return "操作成功";
     }
 
-    /**
-     * ✨✨✨ 新增：删除评论逻辑 ✨✨✨
-     */
     @Transactional(rollbackFor = Exception.class)
     public String deleteComment(Long commentId, Long userId) {
         Comment comment = commentMapper.findById(commentId);
         if (comment == null) return "评论不存在";
-
-        // 权限校验：只有发布者自己能删
         if (!comment.getUserId().equals(userId)) {
             return "无权删除";
         }
-
-        // 1. 删除
         commentMapper.deleteById(commentId);
-
-        // 2. 如果这条评论包含分数，删除后需要重新计算平均分
         if (comment.getScore() != null && comment.getScore() > 0) {
             updateBlogAverageScore(comment.getBlogId());
         }
-
         return "删除成功";
+    }
+
+    /**
+     * ✨✨✨ 辅助方法：构造并发送通知 ✨✨✨
+     */
+    private void sendNotification(Long senderId, Long blogId, Integer type, String content) {
+        // 1. 查博客详情，获取作者信息
+        Blog blog = blogMapper.findById(blogId);
+        if (blog == null) return;
+
+        // 2. 根据作者昵称反查作者ID (因为目前blog表只存了author昵称)
+        User author = userMapper.findByUsername(blog.getAuthor());
+        if (author == null) return;
+
+        // 3. 自己操作自己不发通知
+        if (author.getId().equals(senderId)) return;
+
+        // 4. 查发送者信息
+        User sender = userMapper.findById(senderId);
+
+        // 5. 插入通知
+        Notification notify = new Notification();
+        notify.setUserId(author.getId()); // 接收人：文章作者
+        notify.setSenderId(senderId);     // 发送人：当前操作用户
+        notify.setSenderName(sender.getNickname() == null ? sender.getUsername() : sender.getNickname());
+        notify.setType(type);
+        notify.setContent(content);
+        notify.setRelatedId(blogId);
+
+        notificationMapper.insert(notify);
     }
 }

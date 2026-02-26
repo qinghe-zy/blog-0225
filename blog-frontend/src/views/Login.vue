@@ -35,21 +35,18 @@ const handleLogin = async () => {
   try {
     const res = await axios.post('http://localhost:8080/api/user/login', form)
     
-    // ✨ 修改判断逻辑：如果后端返回的是一个对象，并且有 id，说明登录成功
-    if (res.data && res.data.id) {
-      ElMessage.success('登录成功！')
-      
-      //把整个用户对象转成字符串，存入 localStorage
-      // 以后我们要用 id 就取 user.id，要用名字就取 user.username
-      localStorage.setItem('user', JSON.stringify(res.data))
-      
+    // ✨✨ 适配 Result 结构: code=200 为成功
+    if (res.data.code === 200) {
+      ElMessage.success(res.data.msg || '登录成功')
+      // 数据在 res.data.data 里
+      localStorage.setItem('user', JSON.stringify(res.data.data))
       router.push('/home')
     } else {
-      // 如果返回的是字符串（比如"账号或密码错误"），就显示报错
-      ElMessage.error(res.data || '登录失败')
+      // 业务错误 (如密码错)
+      ElMessage.error(res.data.msg)
     }
   } catch (e) {
-    ElMessage.error('网络错误')
+    ElMessage.error('无法连接服务器')
   }
 }
 </script>
