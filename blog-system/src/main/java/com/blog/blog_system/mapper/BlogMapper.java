@@ -3,39 +3,11 @@ package com.blog.blog_system.mapper;
 import com.blog.blog_system.entity.Blog;
 import org.apache.ibatis.annotations.*;
 import java.util.List;
+import java.util.Set; // ✨ 修复：补充 Set 集合类的导入
 
 @Mapper
 public interface BlogMapper {
 
-    // ... (保留 findAll, insert, search, deleteById, findById, update, updateScore, incrementViews 方法) ...
-    // 为节省篇幅，这里省略未修改的方法，请保持原样
-
-    // ================= 重点修复区域 =================
-
-    // 检查是否点赞
-    @Select("SELECT COUNT(*) FROM user_like WHERE user_id = #{userId} AND blog_id = #{blogId}")
-    int checkIsLiked(@Param("userId") Long userId, @Param("blogId") Long blogId);
-
-    // 添加点赞记录
-    @Insert("INSERT INTO user_like(user_id, blog_id, create_time) VALUES(#{userId}, #{blogId}, NOW())")
-    void addLike(@Param("userId") Long userId, @Param("blogId") Long blogId);
-
-    // 移除点赞记录
-    @Delete("DELETE FROM user_like WHERE user_id = #{userId} AND blog_id = #{blogId}")
-    void removeLike(@Param("userId") Long userId, @Param("blogId") Long blogId);
-
-    // 点赞数 +1
-    @Update("UPDATE blog SET likes = likes + 1 WHERE id = #{id}")
-    void incrementLikes(Long id);
-
-    // ✨✨✨ 修复：点赞数 -1 (增加双重保险：只有当 likes > 0 时才减) ✨✨✨
-    @Update("UPDATE blog SET likes = likes - 1 WHERE id = #{id} AND likes > 0")
-    void decrementLikes(Long id);
-
-    // ================= 结束重点修复区域 =================
-
-    // ... (保留 findLikedBlogs, findHotBlogs, findRecentBlogs 等查询方法) ...
-    // 请确保其他 Mapper 方法保持原样
     @Select("SELECT * FROM blog ORDER BY create_time DESC")
     List<Blog> findAll();
 
@@ -64,6 +36,25 @@ public interface BlogMapper {
     @Update("UPDATE blog SET views = views + 1 WHERE id = #{id}")
     void incrementViews(Long id);
 
+    // ================= 点赞相关 =================
+
+    @Select("SELECT COUNT(*) FROM user_like WHERE user_id = #{userId} AND blog_id = #{blogId}")
+    int checkIsLiked(@Param("userId") Long userId, @Param("blogId") Long blogId);
+
+    @Insert("INSERT INTO user_like(user_id, blog_id, create_time) VALUES(#{userId}, #{blogId}, NOW())")
+    void addLike(@Param("userId") Long userId, @Param("blogId") Long blogId);
+
+    @Delete("DELETE FROM user_like WHERE user_id = #{userId} AND blog_id = #{blogId}")
+    void removeLike(@Param("userId") Long userId, @Param("blogId") Long blogId);
+
+    @Update("UPDATE blog SET likes = likes + 1 WHERE id = #{id}")
+    void incrementLikes(Long id);
+
+    @Update("UPDATE blog SET likes = likes - 1 WHERE id = #{id} AND likes > 0")
+    void decrementLikes(Long id);
+
+    // ================= 基础查询 =================
+
     @Select("SELECT b.* FROM blog b JOIN user_like ul ON b.id = ul.blog_id WHERE ul.user_id = #{userId} ORDER BY ul.create_time DESC")
     List<Blog> findLikedBlogs(Long userId);
 
@@ -85,6 +76,60 @@ public interface BlogMapper {
     @Select("SELECT * FROM blog WHERE tags LIKE CONCAT('%', #{tag}, '%') ORDER BY views DESC LIMIT 10")
     List<Blog> findBlogsByTag(String tag);
 
-    @Select("SELECT b.*, COUNT(distinct ul_others.user_id) as rec_weight FROM blog b JOIN user_like ul_others ON b.id = ul_others.blog_id JOIN user_like ul_me ON ul_others.user_id = ul_me.user_id WHERE ul_me.user_id != #{userId} AND ul_me.blog_id IN (SELECT blog_id FROM user_like WHERE user_id = #{userId}) AND b.id NOT IN (SELECT blog_id FROM user_like WHERE user_id = #{userId}) GROUP BY b.id ORDER BY rec_weight DESC LIMIT 10")
+    // ================== ✨ 状态查询 (新增) ==================
+
+    @Select("SELECT blog_id FROM user_like WHERE user_id = #{userId}")
+    Set<Long> findLikedBlogIds(Long userId);
+
+    @Select("SELECT blog_id FROM user_action WHERE user_id = #{userId} AND type = 1")
+    Set<Long> findCollectedBlogIds(Long userId);
+
+    // ================== ✨ 全局过滤拉黑数据 (type = 3) ==================
+
+    // 1. 全部文章 (排除拉黑)
+    @Select("SELECT * FROM blog WHERE id NOT IN (SELECT blog_id FROM user_action WHERE user_id = #{userId} AND type = 3) ORDER BY create_time DESC")
+    List<Blog> findAllWithFilter(@Param("userId") Long userId);
+
+    // 2. 搜索文章 (排除拉黑)
+    @Select("SELECT * FROM blog WHERE (title LIKE CONCAT('%', #{keyword}, '%') OR tags LIKE CONCAT('%', #{keyword}, '%')) " +
+            "AND id NOT IN (SELECT blog_id FROM user_action WHERE user_id = #{userId} AND type = 3) ORDER BY create_time DESC")
+    List<Blog> searchWithFilter(@Param("keyword") String keyword, @Param("userId") Long userId);
+
+    // 3. 热门兜底 (排除拉黑)
+    @Select("SELECT * FROM blog WHERE id NOT IN (SELECT blog_id FROM user_action WHERE user_id = #{userId} AND type = 3) ORDER BY views DESC LIMIT 5")
+    List<Blog> findHotBlogsWithFilter(@Param("userId") Long userId);
+
+    // 4. 协同过滤推荐 (融合了“点赞+收藏加权”与“拉黑屏蔽”)
+    @Select("SELECT b.*, SUM(w.weight) as rec_score " +
+            "FROM blog b " +
+            "JOIN ( " +
+            "    SELECT distinct target_id as blog_id, user_id, 3 as weight FROM user_like " +
+            "    UNION ALL " +
+            "    SELECT distinct blog_id, user_id, 5 as weight FROM user_action WHERE type = 1 " +
+            ") target_behavior ON b.id = target_behavior.blog_id " +
+            "JOIN ( " +
+            "    SELECT t2.user_id " +
+            "    FROM ( " +
+            "        SELECT target_id as blog_id FROM user_like WHERE user_id = #{userId} " +
+            "        UNION ALL " +
+            "        SELECT blog_id FROM user_action WHERE user_id = #{userId} AND type = 1 " +
+            "    ) my_history " +
+            "    JOIN ( " +
+            "        SELECT target_id as blog_id, user_id FROM user_like " +
+            "        UNION ALL " +
+            "        SELECT blog_id, user_id FROM user_action WHERE type = 1 " +
+            "    ) t2 ON my_history.blog_id = t2.blog_id " +
+            "    WHERE t2.user_id != #{userId} " +
+            ") neighbor ON target_behavior.user_id = neighbor.user_id " +
+            "WHERE b.id NOT IN ( " +
+            "    SELECT target_id FROM user_like WHERE user_id = #{userId} " + // 排除已赞
+            "    UNION " +
+            "    SELECT blog_id FROM user_action WHERE user_id = #{userId} AND type = 1 " + // 排除已收藏
+            "    UNION " +
+            "    SELECT blog_id FROM user_action WHERE user_id = #{userId} AND type = 3 " + // ✨✨ 屏蔽已拉黑
+            ") " +
+            "GROUP BY b.id " +
+            "ORDER BY rec_score DESC " +
+            "LIMIT 10")
     List<Blog> findCollaborativeBlogs(Long userId);
 }

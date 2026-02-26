@@ -80,10 +80,19 @@ public class AIService {
             }
         } catch (Exception e) {
             e.printStackTrace();
-            return Map.of("summary", "AI分析失败: " + e.getMessage(), "tags", "Error");
+            System.err.println("⚠️ AI 接口调用失败(已触发动态降级): " + e.getMessage());
+
+            // ✨ 动态降级：不写死固定领域，而是提取文章前 50 个字作为摘要
+            Map<String, String> fallbackResult = new HashMap<>();
+            String autoSummary = content.length() > 40 ? content.substring(0, 40) + "..." : content;
+            fallbackResult.put("summary", "【系统提取】" + autoSummary);
+            fallbackResult.put("tags", "系统暂无标签"); // 使用中性词，不误导用户
+
+            return fallbackResult;
         }
         return Map.of("summary", "AI 服务暂不可用", "tags", "");
     }
+
     /**
      * ✨✨✨ 新增：AI 推荐匹配度分析 ✨✨✨
      * 场景：判断“某篇文章”是否适合“某位用户”，并生成推荐理由
@@ -137,11 +146,14 @@ public class AIService {
             }
         } catch (Exception e) {
             e.printStackTrace();
-            // 降级策略：如果 AI 挂了，返回默认值
-            Map<String, Object> mock = new HashMap<>();
-            mock.put("score", 50.0);
-            mock.put("reason", "热门内容推荐");
-            return mock;
+            System.err.println("⚠️ AI 推荐分析失败(已触发动态降级): " + e.getMessage());
+
+            //动态降级：给予中等基础分，不提供虚假的语义分析
+            Map<String, Object> fallbackResult = new HashMap<>();
+            fallbackResult.put("score", 30.0); // 给予一个基础权重分
+            fallbackResult.put("reason", "基于系统基础推荐算法推荐"); // 诚实地告诉用户这是基础推荐
+
+            return fallbackResult;
         }
         return Map.of("score", 0.0, "reason", "服务不可用");
     }

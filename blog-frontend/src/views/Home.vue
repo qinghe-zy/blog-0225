@@ -12,6 +12,7 @@
               <el-avatar v-else class="user-avatar">{{ (currentUser.nickname || currentUser.username || '匿').charAt(0) }}</el-avatar>
               
               <span class="username-text">{{ currentUser.nickname || currentUser.username }}</span>
+              <el-tag v-if="currentUser.role === 1" size="small" type="danger" style="margin-left: 5px;">超管</el-tag>
               <el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </div>
             <template #dropdown>
@@ -99,6 +100,9 @@
                     >
                       {{ tag }}
                     </el-tag>
+                    
+                    <el-tag v-if="blog.isLiked" type="danger" effect="dark" size="small" style="margin-left: 5px;">❤️ 已点赞</el-tag>
+                    <el-tag v-if="blog.isCollected" type="warning" effect="dark" size="small" style="margin-left: 5px;">⭐ 已收藏</el-tag>
                   </div>
 
                   <div class="blog-summary" @click="toDetail(blog.id)">
@@ -108,6 +112,7 @@
                   <div class="blog-footer">
                     <div class="footer-stats">
                       <span>🔥 {{ blog.views || 0 }}</span>
+                      <span style="margin-left: 10px;">👍 {{ blog.likes || 0 }}</span>
                       <span v-if="blog.score > 0" style="color: #E6A23C; margin-left: 10px;">
                         ⭐ {{ blog.score }}
                       </span>
@@ -201,7 +206,7 @@ const currentMenu = ref('1')
 const searchKeyword = ref('')
 const dialogVisible = ref(false)
 const isSubmitting = ref(false)
-const aiLoading = ref(false) // AI 加载状态
+const aiLoading = ref(false)
 
 const userStore = localStorage.getItem('user')
 const currentUser = ref(userStore ? JSON.parse(userStore) : {})
@@ -212,15 +217,11 @@ const blogForm = reactive({
   title: '', 
   tags: [], 
   content: '', 
-  summary: '', // 新增摘要字段
+  summary: '', 
   author: currentUser.value.nickname || currentUser.value.username, 
   url: '' 
 })
 
-/**
- * 处理文件上传回调
- * 适配后端 Result 统一响应结构
- */
 const handleUploadSuccess = (res) => {
   if (res.code === 200) {
     blogForm.url = res.data
@@ -230,10 +231,6 @@ const handleUploadSuccess = (res) => {
   }
 }
 
-/**
- * AI 辅助生成摘要和标签
- * 调用 DeepSeek 接口
- */
 const handleAIAnalyze = async () => {
   if (!blogForm.content || blogForm.content.length < 10) {
     return ElMessage.warning('请先输入足够的内容供 AI 分析')
@@ -247,17 +244,12 @@ const handleAIAnalyze = async () => {
     
     if (res.data.code === 200) {
       const data = res.data.data
-      
-      // 1. 回填摘要
       blogForm.summary = data.summary
-      
-      // 2. 回填标签 (合并去重)
       if (data.tags) {
         const aiTags = data.tags.split(/[,，]/).map(t => t.trim())
         const newTags = new Set([...blogForm.tags, ...aiTags])
         blogForm.tags = Array.from(newTags)
       }
-      
       ElMessage.success('DeepSeek 分析完成！')
     } else {
       ElMessage.error(res.data.msg || 'AI 分析失败')
@@ -270,20 +262,20 @@ const handleAIAnalyze = async () => {
 }
 
 /**
- * 权限判断：是否可以删除博客
- * 仅允许作者本人操作
+ * ✨ 权限判定升级：作者本人 OR 超级管理员 (role === 1) 皆可删除
  */
 const canDelete = (blog) => {
-  if (!currentUser.value.username) return false
-  return currentUser.value.username === blog.author || currentUser.value.nickname === blog.author
+  if (!currentUser.value.username) return false;
+  return currentUser.value.username === blog.author || 
+         currentUser.value.nickname === blog.author || 
+         currentUser.value.role === 1;
 }
 
-/**
- * 加载全部博客
- */
+// ✨ 查询接口全部带上 userId 获取点赞/过滤状态
 const loadBlogs = async () => { 
   try {
-    const res = await axios.get('http://localhost:8080/api/blog/all')
+    const userId = currentUser.value.id || 0;
+    const res = await axios.get(`http://localhost:8080/api/blog/all?userId=${userId}`)
     if (res.data.code === 200) {
       blogList.value = res.data.data
       listTitle.value = '全部文章'
@@ -292,12 +284,10 @@ const loadBlogs = async () => {
   } catch (e) { ElMessage.error('获取列表失败') }
 }
 
-/**
- * 加载热门博客
- */
 const loadHotBlogs = async () => { 
   try {
-    const res = await axios.get('http://localhost:8080/api/blog/hot')
+    const userId = currentUser.value.id || 0;
+    const res = await axios.get(`http://localhost:8080/api/blog/hot?userId=${userId}`)
     if (res.data.code === 200) {
       blogList.value = res.data.data
       listTitle.value = '全站热门榜单'
@@ -306,10 +296,6 @@ const loadHotBlogs = async () => {
   } catch (e) { ElMessage.error('获取热门失败') }
 }
 
-/**
- * 加载个性化推荐
- * 需登录后才能使用
- */
 const loadRecommend = async () => {
   if (!currentUser.value.id) {
     ElMessage.warning('请登录后查看个性化推荐')
@@ -325,13 +311,13 @@ const loadRecommend = async () => {
   } catch (e) { ElMessage.error('获取推荐数据失败') }
 }
 
-/**
- * 搜索功能
- */
 const handleSearch = async () => { 
   if(!searchKeyword.value) return loadBlogs()
   try {
-    const res = await axios.get('http://localhost:8080/api/blog/search', { params: { keyword: searchKeyword.value } })
+    const userId = currentUser.value.id || 0;
+    const res = await axios.get('http://localhost:8080/api/blog/search', { 
+      params: { keyword: searchKeyword.value, userId: userId } 
+    })
     if (res.data.code === 200) {
       blogList.value = res.data.data
       listTitle.value = `搜索结果: "${searchKeyword.value}"`
@@ -339,15 +325,11 @@ const handleSearch = async () => {
   } catch (e) { ElMessage.error('搜索失败') }
 }
 
-/**
- * 提交发布文章
- */
 const submitBlog = async () => {
   if (!blogForm.title || !blogForm.content) return ElMessage.warning('标题和正文不能为空')
   if (blogForm.tags.length === 0) return ElMessage.warning('请至少输入一个标签') 
 
   isSubmitting.value = true
-  // 取第一个标签作为主分类
   const derivedCategory = blogForm.tags[0]
   
   const submitData = { 
@@ -363,7 +345,6 @@ const submitBlog = async () => {
       ElMessage.success('发布成功！')
       dialogVisible.value = false
       loadBlogs()
-      // 重置表单
       blogForm.title = ''
       blogForm.content = ''
       blogForm.url = ''
@@ -381,16 +362,15 @@ const submitBlog = async () => {
 
 const toDetail = (id) => { if (id) router.push(`/blog/${id}`) }
 
-/**
- * 删除文章操作
- */
+// ✨ 删除时传入 userId 做管理员鉴权
 const handleDelete = (id) => { 
   ElMessageBox.confirm('确定要删除这篇文章吗？此操作不可恢复。', '警告', {
     confirmButtonText: '确定删除',
     cancelButtonText: '取消',
     type: 'warning'
   }).then(async()=>{
-    const res = await axios.delete(`http://localhost:8080/api/blog/delete/${id}`)
+    const userId = currentUser.value.id;
+    const res = await axios.delete(`http://localhost:8080/api/blog/delete/${id}?userId=${userId}`)
     if (res.data.code === 200) {
       loadBlogs()
       ElMessage.success('已删除')
@@ -410,31 +390,26 @@ onMounted(() => { loadBlogs() })
 </script>
 
 <style scoped>
-/* 布局样式 */
+/* 样式内容无需变动 */
 .header-bar { background-color: #fff; border-bottom: 1px solid #ddd; position: sticky; top: 0; z-index: 1000; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
 .header-left h2 { margin: 0; color: #409EFF; font-size: 24px; font-weight: 700; letter-spacing: 1px; }
 .user-info-cursor { display: flex; align-items: center; cursor: pointer; padding: 5px 10px; border-radius: 4px; transition: 0.3s; }
 .user-info-cursor:hover { background-color: #f5f7fa; }
 .user-avatar { background-color: #409eff; margin-right: 8px; }
 .username-text { font-weight: bold; color: #333; }
-
 .main-container { width: 1200px; margin: 20px auto; gap: 20px; }
 .menu-card { border: none; position: sticky; top: 80px; }
 .clean-menu { border: none; }
 .clean-menu :deep(.el-menu-item.is-active) { background-color: #ecf5ff; border-right: 3px solid #409eff; color: #409eff; font-weight: bold; }
-
 .tags-section { padding: 0 20px; margin-top: 20px; }
 .tags-title { font-size: 14px; color: #999; margin-bottom: 12px; font-weight: bold; }
 .tags-cloud { display: flex; flex-wrap: wrap; gap: 8px; }
 .tag-item { cursor: pointer; transition: 0.2s; }
 .tag-item:hover { transform: translateY(-2px); }
-
 .content-main { padding: 0; overflow: visible; }
 .toolbar { margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 15px 20px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
 .page-title { margin: 0; font-size: 18px; color: #333; border-left: 4px solid #409eff; padding-left: 10px; }
 .tools { display: flex; gap: 10px; }
-
-/* 博客卡片样式 */
 .blog-card { margin-bottom: 20px; height: 380px; display: flex; flex-direction: column; transition: transform 0.3s, box-shadow 0.3s; border-radius: 8px; border: none; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05); }
 .blog-card:hover { transform: translateY(-5px); box-shadow: 0 8px 16px rgba(0,0,0,0.1); }
 .blog-cover { height: 160px; width: 100%; object-fit: cover; cursor: pointer; }
@@ -445,8 +420,6 @@ onMounted(() => { loadBlogs() })
 .blog-summary { font-size: 13px; color: #666; line-height: 1.6; height: 42px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; cursor: pointer; margin-bottom: 15px; }
 .blog-footer { margin-top: auto; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #999; border-top: 1px solid #f0f0f0; padding-top: 10px; }
 .footer-stats { display: flex; align-items: center; }
-
-/* 上传组件样式 */
 .avatar-uploader { border: 1px dashed #d9d9d9; border-radius: 6px; cursor: pointer; position: relative; overflow: hidden; width: 100px; height: 100px; display: flex; justify-content: center; align-items: center; transition: 0.2s; }
 .avatar-uploader:hover { border-color: #409EFF; }
 .avatar-uploader-icon { font-size: 28px; color: #8c939d; }

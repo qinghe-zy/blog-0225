@@ -17,5 +17,7 @@ public class Blog {
     private Integer views;  // 浏览量
     private Integer likes;    // 点赞数
     private Integer collects; // 收藏数
-    private Double score;     // 评分 (例如 4.5)
+    private Double score;
+    private Boolean isLiked;
+    private Boolean isCollected;// 评分 (例如 4.5)
 }
